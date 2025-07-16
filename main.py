@@ -23,7 +23,7 @@ loader = ConfluenceLoader(
     url=CONFLUENCE_BASE_URL,
     username=CONFLUENCE_USERNAME,
     api_key=CONFLUENCE_API_TOKEN,
-    space_key="SD",
+    space_key="~70121465f64cb86d84c92b0bdbc36762f880c",
     limit=25
 )
 

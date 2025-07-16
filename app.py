@@ -7,6 +7,12 @@ from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_chroma import Chroma
 from langchain_community.document_loaders import ConfluenceLoader
 
+# Simple Document class for creating document objects
+class Document:
+    def __init__(self, page_content, metadata=None):
+        self.page_content = page_content
+        self.metadata = metadata or {}
+
 # Load environment variables
 load_dotenv()
 CHROMA_DB_DIR = os.getenv("CHROMA_DB_DIR", "./chroma_store")
@@ -22,7 +28,7 @@ db = Chroma(persist_directory=CHROMA_DB_DIR, embedding_function=embeddings)
 
 # Initialize session state for page navigation
 if 'page' not in st.session_state:
-    st.session_state.page = 'search'
+    st.session_state.page = 'dashboard'
 if 'merge_docs' not in st.session_state:
     st.session_state.merge_docs = None
 if 'merged_content' not in st.session_state:
@@ -277,22 +283,195 @@ def apply_merge_to_confluence(main_doc, similar_doc, merged_content, keep_main=T
     except Exception as e:
         return False, f"Error applying merge to Confluence: {str(e)}"
 
+def get_detected_duplicates():
+    """Get all document pairs that have been detected as duplicates"""
+    try:
+        # Get all documents from the database
+        all_docs = db.get()
+        
+        if not all_docs['documents']:
+            return []
+        
+        duplicate_pairs = []
+        processed_docs = set()
+        
+        # Create a mapping from doc_id to index for faster lookup
+        doc_id_to_index = {}
+        for i, metadata in enumerate(all_docs['metadatas']):
+            doc_id = metadata.get('doc_id', '')
+            if doc_id:
+                doc_id_to_index[doc_id] = i
+        
+        # Process each document
+        for i, metadata in enumerate(all_docs['metadatas']):
+            doc_id = metadata.get('doc_id', '')
+            
+            if doc_id in processed_docs:
+                continue
+            
+            content = all_docs['documents'][i]
+            
+            # Check if this document has similar documents
+            similar_docs_str = metadata.get('similar_docs', '')
+            if not similar_docs_str:
+                continue
+                
+            similar_doc_ids = [id.strip() for id in similar_docs_str.split(',') if id.strip()]
+            
+            # Find the similar documents
+            for similar_doc_id in similar_doc_ids:
+                if similar_doc_id in processed_docs:
+                    continue
+                    
+                # Find the similar document using the doc_id mapping
+                similar_doc_index = doc_id_to_index.get(similar_doc_id)
+                
+                if similar_doc_index is not None:
+                    # Create document objects
+                    main_doc = Document(
+                        page_content=content,
+                        metadata=metadata
+                    )
+                    
+                    similar_doc = Document(
+                        page_content=all_docs['documents'][similar_doc_index],
+                        metadata=all_docs['metadatas'][similar_doc_index]
+                    )
+                    
+                    # Calculate similarity score (you can enhance this)
+                    similarity_score = 0.8  # Placeholder - you could calculate actual similarity
+                    
+                    duplicate_pairs.append({
+                        'main_doc': main_doc,
+                        'similar_doc': similar_doc,
+                        'similarity_score': similarity_score,
+                        'main_title': metadata.get('title', 'Untitled'),
+                        'similar_title': all_docs['metadatas'][similar_doc_index].get('title', 'Untitled')
+                    })
+                    
+                    processed_docs.add(similar_doc_id)
+            
+            processed_docs.add(doc_id)
+        
+        return duplicate_pairs
+    
+    except Exception as e:
+        st.error(f"Error getting detected duplicates: {str(e)}")
+        return []
+
 # Streamlit UI
-st.set_page_config(page_title="Confluence Semantic Search", layout="wide")
+st.set_page_config(page_title="DocJanitor - Confluence Duplicate Manager", layout="wide")
+
+# Navigation sidebar
+with st.sidebar:
+    st.markdown("# **DocJanitor**")
+    st.markdown("*Confluence Duplicate Manager*")
+    st.markdown("---")
+    
+    # Navigation buttons
+    if st.button("🏠 Dashboard", use_container_width=True):
+        st.session_state.page = 'dashboard'
+        st.rerun()
+    
+    if st.button("🔍 Search", use_container_width=True):
+        st.session_state.page = 'search'
+        st.rerun()
+    
+    if st.button("📋 Detected Duplicates", use_container_width=True):
+        st.session_state.page = 'duplicates'
+        st.rerun()
+    
+    st.markdown("---")
+    st.markdown("### Current Page")
+    st.info(f"📍 {st.session_state.page.title()}")
 
 # Page routing
-if st.session_state.page == 'search':
+if st.session_state.page == 'dashboard':
+    st.title("🏠 Dashboard")
+    st.markdown("Welcome to DocJanitor - your Confluence duplicate document manager!")
+    
+    # Create two columns for the main sections
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("## 🔍 Search")
+        st.markdown("Search for documents and discover potential duplicates using semantic search.")
+        
+        # Quick search form
+        with st.form("quick_search"):
+            quick_query = st.text_input("Quick Search", placeholder="Enter search terms...")
+            search_submitted = st.form_submit_button("Search", use_container_width=True)
+            
+            if search_submitted and quick_query:
+                # Store search query and switch to search page
+                st.session_state.search_query = quick_query
+                st.session_state.page = 'search'
+                st.rerun()
+        
+        # Search statistics
+        try:
+            all_docs = db.get()
+            total_docs = len(all_docs['documents']) if all_docs['documents'] else 0
+            st.metric("Total Documents", total_docs)
+        except Exception as e:
+            st.metric("Total Documents", "Error loading")
+    
+    with col2:
+        st.markdown("## 📋 Detected Duplicates")
+        st.markdown("Review and manage document pairs that have been automatically detected as potential duplicates.")
+        
+        # Get detected duplicates
+        duplicate_pairs = get_detected_duplicates()
+        
+        if duplicate_pairs:
+            st.metric("Duplicate Pairs Found", len(duplicate_pairs))
+            
+            # Simple info message about duplicates with link to duplicates page
+            if len(duplicate_pairs) == 1:
+                st.info(f"Found {len(duplicate_pairs)} duplicate pair.")
+            else:
+                st.info(f"Found {len(duplicate_pairs)} duplicate pairs.")
+            
+            # Button to go to duplicates page
+            if st.button("🔍 View All Duplicates", use_container_width=True):
+                st.session_state.page = 'duplicates'
+                st.rerun()
+                
+        else:
+            st.metric("Duplicate Pairs Found", "0")
+            st.info("No duplicate pairs detected yet. Use the search function to find and identify duplicates.")
+    
+    # Statistics section
+    st.markdown("---")
+    st.markdown("## 📊 Statistics")
+    
+    stat_col1, stat_col2, stat_col3, stat_col4 = st.columns(4)
+    
+    with stat_col1:
+        try:
+            all_docs = db.get()
+            total_docs = len(all_docs['documents']) if all_docs['documents'] else 0
+            st.metric("Total Documents", total_docs)
+        except:
+            st.metric("Total Documents", "Error")
+    
+    with stat_col2:
+        st.metric("Duplicate Pairs", len(duplicate_pairs))
+    
+    with stat_col3:
+        # Calculate documents involved in duplicates
+        docs_with_duplicates = len(duplicate_pairs) * 2  # Each pair involves 2 docs
+        st.metric("Documents with Duplicates", docs_with_duplicates)
+    
+    with stat_col4:
+        # Calculate potential space saved (placeholder)
+        st.metric("Potential Merges", len(duplicate_pairs))
+
+elif st.session_state.page == 'search':
     st.title("🔍 Semantic Search for Confluence")
 
-    # Search configuration sidebar
+    # Search configuration sidebar section
     with st.sidebar:
-        st.markdown("# **DocJanitor**")
-        st.markdown("---")
-        
-        # Dashboard button placeholder
-        if st.button("🏠 Dashboard", use_container_width=True):
-            st.info("Dashboard functionality coming soon!")
-        
         st.markdown("---")
         st.header("Search Settings")
         
@@ -301,7 +480,13 @@ if st.session_state.page == 'search':
         similarity_threshold = 0.7  # Similarity threshold
         search_type = "similarity"  # Default search type
 
-    query = st.text_input("Enter your search query:", placeholder="e.g. onboarding, reset password...", key="search_query")
+    # Check if there's a search query from dashboard
+    initial_query = st.session_state.get('search_query', '')
+    if initial_query:
+        # Clear the stored query
+        st.session_state.search_query = ''
+    
+    query = st.text_input("Enter your search query:", placeholder="e.g. onboarding, reset password...", key="search_query", value=initial_query)
 
     # Run search when Enter is pressed or Search button is clicked
     if st.button("Search") or (query and query.strip()):
@@ -421,13 +606,153 @@ if st.session_state.page == 'search':
                                 st.markdown("**Full Content:**")
                                 st.write(main_content)
 
+elif st.session_state.page == 'duplicates':
+    st.title("📋 Detected Duplicates")
+    st.markdown("Review and manage all document pairs that have been automatically detected as potential duplicates.")
+    
+    # Get detected duplicates
+    duplicate_pairs = get_detected_duplicates()
+    
+    # Filter section
+    st.markdown("### 🔍 Filters")
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        similarity_filter = st.selectbox(
+            "Similarity Score", 
+            ["All", "High (>90%)", "Medium (70-90%)", "Low (<70%)"],
+            help="Filter duplicates by similarity score"
+        )
+    
+    with col2:
+        status_filter = st.selectbox(
+            "Status", 
+            ["All", "Pending", "Reviewed", "Merged"],
+            help="Filter duplicates by processing status"
+        )
+    
+    with col3:
+        date_filter = st.selectbox(
+            "Date Added", 
+            ["All", "Today", "This Week", "This Month"],
+            help="Filter duplicates by when they were detected"
+        )
+    
+    with col4:
+        sort_by = st.selectbox(
+            "Sort By", 
+            ["Similarity Score", "Date Added", "Title A-Z", "Title Z-A"],
+            help="Sort duplicates by different criteria"
+        )
+    
+    st.markdown("---")
+    
+    # Results section
+    if duplicate_pairs:
+        st.markdown(f"### 📊 Found {len(duplicate_pairs)} Duplicate Pairs")
+        
+        # Create tiles for each duplicate pair
+        for i, pair in enumerate(duplicate_pairs):
+            with st.container():
+                # Create a bordered container for each pair
+                st.markdown(f"""
+                <div style="border: 1px solid #ddd; border-radius: 8px; padding: 16px; margin-bottom: 16px; background-color: #f9f9f9;">
+                """, unsafe_allow_html=True)
+                
+                # Title row
+                col_title, col_actions = st.columns([3, 1])
+                
+                with col_title:
+                    st.markdown(f"**Pair {i+1}:** {pair['main_title']} ↔ {pair['similar_title']}")
+                    
+                    # Similarity score badge
+                    similarity_pct = int(pair['similarity_score'] * 100)
+                    if similarity_pct >= 90:
+                        badge_color = "green"
+                    elif similarity_pct >= 70:
+                        badge_color = "orange"
+                    else:
+                        badge_color = "red"
+                    
+                    st.markdown(f"""
+                    <span style="background-color: {badge_color}; color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px;">
+                        {similarity_pct}% Similar
+                    </span>
+                    """, unsafe_allow_html=True)
+                
+                with col_actions:
+                    if st.button("🔀 Merge", key=f"merge_dup_{i}", help="Merge these documents"):
+                        st.session_state.merge_docs = {
+                            'main_doc': pair['main_doc'],
+                            'similar_docs': [pair['similar_doc']]
+                        }
+                        st.session_state.page = 'merge'
+                        st.rerun()
+                
+                # Content preview row
+                col_left, col_right = st.columns(2)
+                
+                with col_left:
+                    st.markdown(f"**📄 {pair['main_title']}**")
+                    main_content = pair['main_doc'].page_content
+                    preview = main_content[:150] + "..." if len(main_content) > 150 else main_content
+                    st.text(preview)
+                    
+                    # Show source if available
+                    main_source = pair['main_doc'].metadata.get('source', '')
+                    if main_source:
+                        st.markdown(f"[🔗 View Source]({main_source})")
+                
+                with col_right:
+                    st.markdown(f"**📄 {pair['similar_title']}**")
+                    similar_content = pair['similar_doc'].page_content
+                    preview = similar_content[:150] + "..." if len(similar_content) > 150 else similar_content
+                    st.text(preview)
+                    
+                    # Show source if available
+                    similar_source = pair['similar_doc'].metadata.get('source', '')
+                    if similar_source:
+                        st.markdown(f"[🔗 View Source]({similar_source})")
+                
+                # Action buttons row
+                col_btn1, col_btn2, col_btn3, col_btn4 = st.columns(4)
+                
+                with col_btn1:
+                    if st.button("👀 Preview", key=f"preview_{i}", help="Preview both documents"):
+                        st.info("Preview functionality coming soon!")
+                
+                with col_btn2:
+                    if st.button("❌ Not Duplicate", key=f"not_dup_{i}", help="Mark as not duplicate"):
+                        st.info("Not duplicate functionality coming soon!")
+                
+                with col_btn3:
+                    if st.button("⏭️ Skip", key=f"skip_{i}", help="Skip for now"):
+                        st.info("Skip functionality coming soon!")
+                
+                with col_btn4:
+                    if st.button("📝 Details", key=f"details_{i}", help="View detailed comparison"):
+                        st.info("Details functionality coming soon!")
+                
+                st.markdown("</div>", unsafe_allow_html=True)
+    else:
+        st.info("🔍 No duplicate pairs detected yet. Use the search function to find and identify duplicates.")
+        
+        # Add helpful guidance
+        st.markdown("### 💡 Tips for Finding Duplicates")
+        st.markdown("- Use the **Search** page to perform semantic searches")
+        st.markdown("- Similar documents will be automatically grouped together")
+        st.markdown("- The system learns from your interactions to improve detection")
+
 elif st.session_state.page == 'merge':
     st.title("🔀 Document Merge Tool")
     
-    # Back to search button
-    if st.button("← Back to Search"):
-        st.session_state.page = 'search'
-        st.rerun()
+    # Back button
+    col1, col2 = st.columns([1, 4])
+    with col1:
+        if st.button("← Back", use_container_width=True):
+            # Go back to the previous page (dashboard or search)
+            st.session_state.page = 'dashboard'
+            st.rerun()
     
     if st.session_state.merge_docs:
         main_doc = st.session_state.merge_docs['main_doc']
