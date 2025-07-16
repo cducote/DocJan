@@ -286,7 +286,7 @@ if st.session_state.page == 'search':
 
     # Search configuration sidebar
     with st.sidebar:
-        st.markdown("# **DocJaninor**")
+        st.markdown("# **DocJanitor**")
         st.markdown("---")
         
         # Dashboard button placeholder
