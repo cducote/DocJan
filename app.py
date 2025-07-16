@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_chroma import Chroma
 from langchain_community.document_loaders import ConfluenceLoader
+import subprocess
 
 # Simple Document class for creating document objects
 class Document:
@@ -37,6 +38,10 @@ if 'manual_edit_mode' not in st.session_state:
     st.session_state.manual_edit_mode = False
 if 'confluence_operation_result' not in st.session_state:
     st.session_state.confluence_operation_result = None
+if 'reset_confirmation' not in st.session_state:
+    st.session_state.reset_confirmation = False
+if 'reset_result' not in st.session_state:
+    st.session_state.reset_result = None
 
 # Function to merge documents using OpenAI
 def merge_documents_with_ai(main_doc, similar_doc):
@@ -206,25 +211,111 @@ def delete_confluence_page(page_id):
     except Exception as e:
         return False, f"Error deleting page: {str(e)}"
 
-def convert_markdown_to_confluence_storage(markdown_content):
-    """Convert markdown content to Confluence storage format"""
-    # Basic conversion - you might want to enhance this
-    storage_content = markdown_content
+def convert_markdown_to_confluence_storage(content):
+    """Convert content to Confluence storage format"""
+    # Since the AI now generates HTML directly, we mainly need to ensure it's clean
+    storage_content = content.strip()
     
-    # Convert markdown headers to Confluence format
-    storage_content = storage_content.replace('# ', '<h1>').replace('\n# ', '</h1>\n<h1>')
-    storage_content = storage_content.replace('## ', '<h2>').replace('\n## ', '</h2>\n<h2>')
-    storage_content = storage_content.replace('### ', '<h3>').replace('\n### ', '</h3>\n<h3>')
+    # If the content doesn't already have proper HTML structure, wrap it
+    if not storage_content.startswith('<'):
+        # Wrap plain text in paragraph tags
+        storage_content = f"<p>{storage_content}</p>"
     
-    # Convert markdown bold/italic
-    storage_content = storage_content.replace('**', '<strong>').replace('**', '</strong>')
-    storage_content = storage_content.replace('*', '<em>').replace('*', '</em>')
-    
-    # Convert line breaks
+    # Ensure proper paragraph structure for any remaining plain text
+    # Replace double newlines with proper paragraph breaks
     storage_content = storage_content.replace('\n\n', '</p><p>')
-    storage_content = f"<p>{storage_content}</p>"
+    
+    # Clean up any remaining single newlines that might break formatting
+    storage_content = storage_content.replace('\n', ' ')
     
     return storage_content
+
+def update_chroma_after_merge(main_doc, similar_doc, keep_main=True):
+    """Update Chroma database after successful merge to remove duplicate relationships"""
+    try:
+        # Get the doc_id of the document we're keeping and the one we're removing
+        main_doc_id = main_doc.metadata.get('doc_id', '')
+        similar_doc_id = similar_doc.metadata.get('doc_id', '')
+        
+        if not main_doc_id or not similar_doc_id:
+            print(f"DEBUG: Missing doc_ids for Chroma update. Main: {main_doc_id}, Similar: {similar_doc_id}")
+            return False, "Missing document IDs for Chroma update"
+        
+        # Determine which document to keep and which to remove
+        if keep_main:
+            keep_doc_id = main_doc_id
+            remove_doc_id = similar_doc_id
+        else:
+            keep_doc_id = similar_doc_id
+            remove_doc_id = main_doc_id
+        
+        # Get all documents from Chroma
+        all_docs = db.get()
+        
+        if not all_docs['documents']:
+            return False, "No documents found in Chroma database"
+        
+        # Find and update documents that reference the removed document
+        updated_count = 0
+        documents_to_update = []
+        
+        for i, metadata in enumerate(all_docs['metadatas']):
+            doc_id = metadata.get('doc_id', '')
+            similar_docs_str = metadata.get('similar_docs', '')
+            
+            if similar_docs_str and remove_doc_id in similar_docs_str:
+                # Remove the deleted document from similar_docs list
+                similar_doc_ids = [id.strip() for id in similar_docs_str.split(',') if id.strip()]
+                similar_doc_ids = [id for id in similar_doc_ids if id != remove_doc_id]
+                
+                # Update the metadata
+                updated_metadata = metadata.copy()
+                updated_metadata['similar_docs'] = ','.join(similar_doc_ids) if similar_doc_ids else ''
+                
+                # Store the update information
+                documents_to_update.append({
+                    'id': all_docs['ids'][i],
+                    'document': all_docs['documents'][i],
+                    'metadata': updated_metadata
+                })
+                updated_count += 1
+                print(f"DEBUG: Prepared update for document {doc_id} to remove reference to {remove_doc_id}")
+        
+        # Perform batch update using add (which overwrites existing documents with same IDs)
+        if documents_to_update:
+            try:
+                # First delete the existing documents
+                ids_to_update = [item['id'] for item in documents_to_update]
+                db.delete(ids_to_update)
+                
+                # Then add them back with updated metadata
+                db.add_documents(
+                    documents=[Document(page_content=item['document'], metadata=item['metadata']) 
+                             for item in documents_to_update],
+                    ids=ids_to_update
+                )
+                print(f"DEBUG: Successfully updated {len(documents_to_update)} documents via delete+add")
+            except Exception as e:
+                print(f"DEBUG: Error during batch update: {e}")
+                return False, f"Error updating documents: {str(e)}"
+        
+        # Remove the deleted document from Chroma entirely
+        # Find the Chroma ID of the document to remove
+        remove_chroma_id = None
+        for i, metadata in enumerate(all_docs['metadatas']):
+            if metadata.get('doc_id', '') == remove_doc_id:
+                remove_chroma_id = all_docs['ids'][i]
+                break
+        
+        if remove_chroma_id:
+            db.delete([remove_chroma_id])
+            print(f"DEBUG: Removed document {remove_doc_id} from Chroma database")
+        
+        return True, f"Updated {updated_count} documents and removed merged document from database"
+        
+    except Exception as e:
+        print(f"DEBUG: Error updating Chroma after merge: {e}")
+        return False, f"Error updating Chroma database: {str(e)}"
 
 def apply_merge_to_confluence(main_doc, similar_doc, merged_content, keep_main=True):
     """Apply the merge to Confluence: update one page, delete the other"""
@@ -259,7 +350,7 @@ def apply_merge_to_confluence(main_doc, similar_doc, merged_content, keep_main=T
             delete_page_id = main_page_id
             keep_title = similar_doc.metadata.get('title', 'Merged Document')
         
-        # Convert markdown to Confluence storage format
+        # Convert content to Confluence storage format
         confluence_content = convert_markdown_to_confluence_storage(merged_content)
         
         # Update the page we're keeping
@@ -278,7 +369,15 @@ def apply_merge_to_confluence(main_doc, similar_doc, merged_content, keep_main=T
         if not delete_success:
             return False, f"Updated page but failed to delete duplicate: {delete_message}"
         
-        return True, f"Successfully merged documents. Updated '{keep_title}' and deleted duplicate page."
+        # Update Chroma database to remove duplicate relationships
+        chroma_success, chroma_message = update_chroma_after_merge(main_doc, similar_doc, keep_main)
+        
+        if not chroma_success:
+            # Log the error but don't fail the entire operation since Confluence was updated successfully
+            print(f"WARNING: Confluence merge succeeded but Chroma update failed: {chroma_message}")
+            return True, f"Successfully merged documents. Updated '{keep_title}' and deleted duplicate page. Warning: {chroma_message}"
+        
+        return True, f"Successfully merged documents. Updated '{keep_title}', deleted duplicate page, and updated database."
     
     except Exception as e:
         return False, f"Error applying merge to Confluence: {str(e)}"
@@ -384,6 +483,55 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("### Current Page")
     st.info(f"📍 {st.session_state.page.title()}")
+    
+    # Reset section at the bottom
+    st.markdown("---")
+    st.markdown("### ⚠️ Danger Zone")
+    
+    # Reset confirmation workflow
+    if not st.session_state.reset_confirmation:
+        if st.button("🔥 Reset Everything", use_container_width=True, help="Delete ALL pages and reset database"):
+            st.session_state.reset_confirmation = True
+            st.rerun()
+    else:
+        st.warning("⚠️ **WARNING**: This will permanently delete ALL pages in the Confluence space and reset the database!")
+        st.markdown("This action is **irreversible**. Are you sure?")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("✅ Yes, Reset", use_container_width=True, type="primary"):
+                # Run the reset
+                with st.spinner("🔥 Resetting everything..."):
+                    try:
+                        # Import and run the reset function
+                        from reset import run_complete_reset
+                        result = run_complete_reset()
+                        st.session_state.reset_result = result
+                        st.session_state.reset_confirmation = False
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Reset failed: {str(e)}")
+                        st.session_state.reset_confirmation = False
+        
+        with col2:
+            if st.button("❌ Cancel", use_container_width=True):
+                st.session_state.reset_confirmation = False
+                st.rerun()
+    
+    # Show reset results if available
+    if st.session_state.reset_result:
+        result = st.session_state.reset_result
+        st.success("🎉 Reset completed!")
+        st.info(f"Pages deleted: {len(result['deleted_pages'])}")
+        if result['failed_deletions']:
+            st.warning(f"Failed deletions: {len(result['failed_deletions'])}")
+        st.info(f"Database: {result['chroma_reset_message']}")
+        st.info(f"Seed script: {result.get('seed_message', 'Not run')}")
+        st.info(f"Main script: {result.get('main_message', 'Not run')}")
+        
+        if st.button("Clear Results", key="clear_reset_results"):
+            st.session_state.reset_result = None
+            st.rerun()
 
 # Page routing
 if st.session_state.page == 'dashboard':
@@ -656,7 +804,7 @@ elif st.session_state.page == 'duplicates':
             with st.container():
                 # Create a bordered container for each pair
                 st.markdown(f"""
-                <div style="border: 1px solid #ddd; border-radius: 8px; padding: 16px; margin-bottom: 16px; background-color: #f9f9f9;">
+                <div style="border: 1px solid #ddd; border-radius: 8px; margin-bottom: 16px; background-color: #f9f9f9;">
                 """, unsafe_allow_html=True)
                 
                 # Title row

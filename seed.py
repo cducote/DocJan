@@ -17,7 +17,7 @@ confluence = Confluence(
 )
 
 # Define the space key
-SPACE_KEY = "~70121465f64cb86d84c92b0bdbc36762f880c"
+SPACE_KEY = "SD"
 
 # Mock documents data
 documents = [
