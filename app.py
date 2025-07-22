@@ -2,11 +2,15 @@ import streamlit as st
 import os
 import requests
 import json
+import time
+from datetime import datetime
 from dotenv import load_dotenv
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_chroma import Chroma
 from langchain_community.document_loaders import ConfluenceLoader
 import subprocess
+import numpy as np
+from sklearn.metrics.pairwise import cosine_similarity
 
 # Simple Document class for creating document objects
 class Document:
@@ -42,6 +46,18 @@ if 'reset_confirmation' not in st.session_state:
     st.session_state.reset_confirmation = False
 if 'reset_result' not in st.session_state:
     st.session_state.reset_result = None
+
+# Initialize ChromaDB merge tracking collection
+MERGE_COLLECTION_NAME = "merge_operations"
+try:
+    merge_collection = Chroma(
+        collection_name=MERGE_COLLECTION_NAME,
+        persist_directory=CHROMA_DB_DIR,
+        embedding_function=embeddings
+    )
+except Exception as e:
+    print(f"Warning: Could not initialize merge tracking collection: {e}")
+    merge_collection = None
 
 # Function to merge documents using OpenAI
 def merge_documents_with_ai(main_doc, similar_doc):
@@ -230,6 +246,467 @@ def convert_markdown_to_confluence_storage(content):
     
     return storage_content
 
+def scan_for_duplicates(similarity_threshold=0.65, update_existing=True):
+    """
+    Scan all documents in ChromaDB for duplicates and update their similarity relationships.
+    This can be called after undoing merges or when new content is added.
+    
+    Args:
+        similarity_threshold (float): Threshold for considering documents similar (default: 0.65)
+        update_existing (bool): Whether to update existing similarity relationships (default: True)
+    
+    Returns:
+        dict: Results including number of pairs found and updated
+    """
+    try:
+        # Get all documents from ChromaDB
+        all_docs = db.get()
+        
+        if not all_docs['documents'] or len(all_docs['documents']) < 2:
+            return {
+                'success': True,
+                'pairs_found': 0,
+                'documents_updated': 0,
+                'message': f"Not enough documents for duplicate detection ({len(all_docs['documents']) if all_docs['documents'] else 0} found)"
+            }
+        
+        print(f"🔍 Scanning {len(all_docs['documents'])} documents for duplicates...")
+        
+        # Generate embeddings for all documents
+        doc_embeddings = []
+        valid_docs = []
+        
+        for i, doc_content in enumerate(all_docs['documents']):
+            try:
+                # Skip documents that are too short
+                if len(doc_content.strip()) < 50:
+                    continue
+                    
+                embedding = embeddings.embed_query(doc_content)
+                doc_embeddings.append(embedding)
+                valid_docs.append(i)
+            except Exception as e:
+                print(f"Warning: Could not generate embedding for document {i}: {e}")
+                continue
+        
+        if len(valid_docs) < 2:
+            return {
+                'success': True,
+                'pairs_found': 0,
+                'documents_updated': 0,
+                'message': f"Not enough valid documents for duplicate detection ({len(valid_docs)} valid)"
+            }
+        
+        # Calculate similarity matrix
+        embedding_matrix = np.array(doc_embeddings)
+        similarity_matrix = cosine_similarity(embedding_matrix)
+        
+        # Find similar document pairs above threshold
+        similar_pairs = []
+        similar_docs_metadata = {}
+        
+        for i in range(len(valid_docs)):
+            for j in range(i + 1, len(valid_docs)):
+                similarity_score = similarity_matrix[i][j]
+                if similarity_score >= similarity_threshold:
+                    doc_i_idx = valid_docs[i]
+                    doc_j_idx = valid_docs[j]
+                    
+                    title_i = all_docs['metadatas'][doc_i_idx].get('title', f'Document {doc_i_idx+1}')
+                    title_j = all_docs['metadatas'][doc_j_idx].get('title', f'Document {doc_j_idx+1}')
+                    
+                    similar_pairs.append((doc_i_idx, doc_j_idx, similarity_score))
+                    print(f"  ✅ Found similar pair: '{title_i}' ↔ '{title_j}' (similarity: {similarity_score:.3f})")
+                    
+                    # Build similarity metadata
+                    doc_i_id = all_docs['metadatas'][doc_i_idx].get('doc_id', f'doc_{doc_i_idx}')
+                    doc_j_id = all_docs['metadatas'][doc_j_idx].get('doc_id', f'doc_{doc_j_idx}')
+                    
+                    if doc_i_id not in similar_docs_metadata:
+                        similar_docs_metadata[doc_i_id] = []
+                    if doc_j_id not in similar_docs_metadata:
+                        similar_docs_metadata[doc_j_id] = []
+                    
+                    similar_docs_metadata[doc_i_id].append(doc_j_id)
+                    similar_docs_metadata[doc_j_id].append(doc_i_id)
+        
+        # Update documents with new similarity relationships
+        documents_to_update = []
+        
+        for i, metadata in enumerate(all_docs['metadatas']):
+            doc_id = metadata.get('doc_id', f'doc_{i}')
+            current_similar_docs = metadata.get('similar_docs', '')
+            
+            # Determine new similar_docs value
+            if doc_id in similar_docs_metadata:
+                new_similar_docs = ','.join(similar_docs_metadata[doc_id])
+            else:
+                new_similar_docs = ''
+            
+            # Update if different or if update_existing is True
+            if update_existing or current_similar_docs != new_similar_docs:
+                updated_metadata = metadata.copy()
+                updated_metadata['similar_docs'] = new_similar_docs
+                updated_metadata['doc_id'] = doc_id  # Ensure doc_id is set
+                updated_metadata['last_similarity_scan'] = datetime.now().isoformat()
+                
+                documents_to_update.append({
+                    'id': all_docs['ids'][i],
+                    'document': all_docs['documents'][i],
+                    'metadata': updated_metadata
+                })
+        
+        # Perform batch update if there are changes
+        updated_count = 0
+        if documents_to_update:
+            try:
+                # Delete existing documents
+                ids_to_update = [item['id'] for item in documents_to_update]
+                db.delete(ids_to_update)
+                
+                # Add them back with updated metadata
+                db.add_documents(
+                    documents=[Document(page_content=item['document'], metadata=item['metadata']) 
+                             for item in documents_to_update],
+                    ids=ids_to_update
+                )
+                updated_count = len(documents_to_update)
+                print(f"✅ Updated {updated_count} documents with new similarity relationships")
+                
+            except Exception as e:
+                print(f"Error updating documents: {e}")
+                return {
+                    'success': False,
+                    'pairs_found': len(similar_pairs),
+                    'documents_updated': 0,
+                    'message': f"Found {len(similar_pairs)} pairs but failed to update documents: {str(e)}"
+                }
+        
+        return {
+            'success': True,
+            'pairs_found': len(similar_pairs),
+            'documents_updated': updated_count,
+            'message': f"Successfully found {len(similar_pairs)} duplicate pairs and updated {updated_count} documents",
+            'threshold_used': similarity_threshold
+        }
+        
+    except Exception as e:
+        print(f"Error during duplicate scan: {e}")
+        return {
+            'success': False,
+            'pairs_found': 0,
+            'documents_updated': 0,
+            'message': f"Error during duplicate scan: {str(e)}"
+        }
+
+def store_merge_operation(kept_page_id, deleted_page_id, merged_content, kept_title, deleted_title, kept_url="", deleted_url=""):
+    """Store merge operation in ChromaDB for undo capability"""
+    try:
+        if not merge_collection:
+            return False, "Merge tracking collection not available"
+        
+        # Get current version of the kept page before storing
+        current_version = get_page_version(kept_page_id)
+        print(f"DEBUG: Storing merge operation - kept page {kept_page_id} is currently at version {current_version}")
+        
+        # Create merge record metadata
+        merge_record = {
+            "operation_type": "merge",
+            "timestamp": datetime.now().isoformat(),
+            "kept_page_id": str(kept_page_id),
+            "deleted_page_id": str(deleted_page_id),
+            "kept_title": kept_title,
+            "deleted_title": deleted_title,
+            "kept_url": kept_url,
+            "deleted_url": deleted_url,
+            "kept_page_version": current_version,
+            "merged_content": merged_content[:1000] + "..." if len(merged_content) > 1000 else merged_content,
+            "status": "completed"
+        }
+        
+        # Create document for the merge operation
+        merge_doc = Document(
+            page_content=f"Merge operation: {kept_title} ← {deleted_title}",
+            metadata=merge_record
+        )
+        
+        # Generate unique ID for this merge operation
+        merge_id = f"merge_{kept_page_id}_{deleted_page_id}_{int(datetime.now().timestamp())}"
+        
+        # Store in ChromaDB
+        merge_collection.add_documents([merge_doc], ids=[merge_id])
+        
+        print(f"DEBUG: Successfully stored merge operation with version {current_version} for page {kept_page_id}")
+        return True, f"Merge operation stored with ID: {merge_id}"
+        
+    except Exception as e:
+        return False, f"Error storing merge operation: {str(e)}"
+
+def get_confluence_page_versions(page_id):
+    """Get version history for a Confluence page"""
+    try:
+        url = f"{CONFLUENCE_BASE_URL}/rest/api/content/{page_id}/version"
+        response = requests.get(url, auth=get_confluence_auth())
+        if response.status_code == 200:
+            data = response.json()
+            return data.get('results', [])
+        return []
+    except Exception as e:
+        print(f"Error getting page versions: {e}")
+        return []
+
+def restore_confluence_page_version(page_id, version_number):
+    """Restore a Confluence page to a specific version"""
+    try:
+        print(f"DEBUG: Starting restore of page {page_id} to version {version_number}")
+        
+        # Get the specific version content
+        url = f"{CONFLUENCE_BASE_URL}/rest/api/content/{page_id}"
+        params = {"expand": "body.storage,version", "version": version_number}
+        response = requests.get(url, auth=get_confluence_auth(), params=params)
+        
+        if response.status_code != 200:
+            return False, f"Could not get version {version_number}: {response.status_code} - {response.text}"
+        
+        version_data = response.json()
+        retrieved_version = version_data.get('version', {}).get('number')
+        print(f"DEBUG: Retrieved version {retrieved_version} for page {page_id}")
+        
+        # Verify we got the right version
+        if retrieved_version != version_number:
+            return False, f"Retrieved version {retrieved_version} instead of {version_number}"
+        
+        # Get current version
+        current_version = get_page_version(page_id)
+        if current_version is None:
+            return False, "Could not get current page version"
+        
+        print(f"DEBUG: Current page version is {current_version}, restoring to version {version_number}")
+        
+        # Prepare update data with explicit confirmation that we want to revert
+        update_data = {
+            "version": {
+                "number": current_version + 1,
+                "message": f"Reverted to version {version_number} via DocJanitor undo operation"
+            },
+            "title": version_data.get('title'),
+            "type": "page",
+            "body": {
+                "storage": {
+                    "value": version_data['body']['storage']['value'],
+                    "representation": "storage"
+                }
+            }
+        }
+        
+        # Update the page with proper headers
+        update_url = f"{CONFLUENCE_BASE_URL}/rest/api/content/{page_id}"
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+        }
+        
+        print(f"DEBUG: Updating page {page_id} to new version {current_version + 1} with content from version {version_number}")
+        response = requests.put(
+            update_url, 
+            auth=get_confluence_auth(),
+            headers=headers,
+            json=update_data
+        )
+        
+        if response.status_code == 200:
+            new_version = response.json().get('version', {}).get('number', 'unknown')
+            print(f"DEBUG: Successfully updated page to version {new_version}")
+            return True, f"Page restored to version {version_number} successfully (new version: {new_version})"
+        else:
+            print(f"DEBUG: Failed to update page: {response.status_code} - {response.text}")
+            return False, f"Failed to restore page: {response.status_code} - {response.text}"
+    
+    except Exception as e:
+        print(f"DEBUG: Exception in restore_confluence_page_version: {e}")
+        return False, f"Error restoring page version: {str(e)}"
+
+def restore_deleted_confluence_page(page_id):
+    """Restore a deleted Confluence page from trash"""
+    try:
+        # First, check if the page exists in trash
+        check_url = f"{CONFLUENCE_BASE_URL}/rest/api/content/{page_id}?status=trashed"
+        check_response = requests.get(check_url, auth=get_confluence_auth())
+        
+        if check_response.status_code != 200:
+            return False, f"Page {page_id} not found in trash: {check_response.status_code} - {check_response.text}"
+        
+        # Method 1: Try the standard restore endpoint with confirmation
+        restore_url = f"{CONFLUENCE_BASE_URL}/rest/api/content/{page_id}/restore"
+        
+        # Add headers to indicate we're programmatically confirming the restore
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+        }
+        
+        # Some Confluence instances may require a body with confirmation
+        restore_data = {
+            "confirm": True,
+            "restoreMode": "full"  # Restore the full page
+        }
+        
+        response = requests.post(
+            restore_url, 
+            auth=get_confluence_auth(),
+            headers=headers,
+            json=restore_data
+        )
+        
+        if response.status_code == 200:
+            return True, "Page restored from trash successfully"
+        
+        # Method 2: If that fails, try without the body (some versions don't need it)
+        response = requests.post(restore_url, auth=get_confluence_auth(), headers=headers)
+        
+        if response.status_code == 200:
+            return True, "Page restored from trash successfully"
+        
+        # Method 3: Try using PUT to change the status from trashed to current
+        update_url = f"{CONFLUENCE_BASE_URL}/rest/api/content/{page_id}"
+        
+        # Get the current page data first
+        page_data = check_response.json()
+        current_version = page_data.get('version', {}).get('number', 1)
+        
+        # Update the page status
+        update_data = {
+            "version": {
+                "number": current_version + 1
+            },
+            "title": page_data.get('title', 'Restored Page'),
+            "type": "page",
+            "status": "current",  # Change from trashed to current
+            "body": {
+                "storage": {
+                    "value": page_data.get('body', {}).get('storage', {}).get('value', '<p>Restored content</p>'),
+                    "representation": "storage"
+                }
+            }
+        }
+        
+        response = requests.put(
+            update_url,
+            auth=get_confluence_auth(),
+            headers=headers,
+            json=update_data
+        )
+        
+        if response.status_code == 200:
+            return True, "Page restored from trash successfully (via status update)"
+        
+        return False, f"All restore methods failed. Last error: {response.status_code} - {response.text}"
+    
+    except Exception as e:
+        return False, f"Error restoring page from trash: {str(e)}"
+
+def undo_merge_operation(merge_id):
+    """Undo a merge operation using Confluence native restore capabilities"""
+    try:
+        if not merge_collection:
+            return False, "Merge tracking collection not available"
+        
+        # Get the merge operation details
+        results = merge_collection.get(ids=[merge_id])
+        
+        if not results['ids']:
+            return False, f"Merge operation {merge_id} not found"
+        
+        merge_metadata = results['metadatas'][0]
+        kept_page_id = merge_metadata['kept_page_id']
+        deleted_page_id = merge_metadata['deleted_page_id']
+        kept_page_version = merge_metadata.get('kept_page_version', 1)
+        
+        # Step 1: Restore the kept page to its pre-merge version
+        print(f"DEBUG: Attempting to restore page {kept_page_id} to version {kept_page_version}")
+        restore_success, restore_message = restore_confluence_page_version(
+            kept_page_id, kept_page_version
+        )
+        if not restore_success:
+            return False, f"Failed to restore kept page to version {kept_page_version}: {restore_message}"
+        
+        print(f"DEBUG: Successfully restored kept page to version {kept_page_version}")
+        
+        # Step 2: Restore the deleted page from trash
+        print(f"DEBUG: Attempting to restore deleted page {deleted_page_id} from trash")
+        restore_success, restore_message = restore_deleted_confluence_page(deleted_page_id)
+        if not restore_success:
+            return False, f"Failed to restore deleted page: {restore_message}"
+        
+        print(f"DEBUG: Successfully restored deleted page from trash")
+        
+        # Step 3: Update merge operation status
+        updated_metadata = merge_metadata.copy()
+        updated_metadata['status'] = 'undone'
+        updated_metadata['undo_timestamp'] = datetime.now().isoformat()
+        
+        # Remove old record and add updated one
+        merge_collection.delete([merge_id])
+        undo_doc = Document(
+            page_content=f"UNDONE - Merge operation: {merge_metadata['kept_title']} ← {merge_metadata['deleted_title']}",
+            metadata=updated_metadata
+        )
+        merge_collection.add_documents([undo_doc], ids=[merge_id])
+        
+        # Step 4: Automatically scan for duplicates after undo
+        print("DEBUG: Running automatic duplicate detection after undo...")
+        scan_result = scan_for_duplicates(similarity_threshold=0.65, update_existing=True)
+        
+        if scan_result['success']:
+            print(f"DEBUG: Duplicate scan completed - found {scan_result['pairs_found']} pairs, updated {scan_result['documents_updated']} documents")
+            undo_message = f"Merge operation successfully undone. Both original pages have been restored. Automatic duplicate scan found {scan_result['pairs_found']} duplicate pairs."
+        else:
+            print(f"DEBUG: Duplicate scan failed: {scan_result['message']}")
+            undo_message = f"Merge operation successfully undone. Both original pages have been restored. Note: Automatic duplicate scan encountered an issue - please run manual scan if needed."
+        
+        return True, undo_message
+        
+    except Exception as e:
+        return False, f"Error undoing merge operation: {str(e)}"
+
+def get_recent_merges(limit=20):
+    """Get recent merge operations from ChromaDB"""
+    try:
+        if not merge_collection:
+            return []
+        
+        # Get all merge operations
+        results = merge_collection.get()
+        
+        if not results['ids']:
+            return []
+        
+        # Convert to list of dictionaries and sort by timestamp
+        merge_operations = []
+        for i, merge_id in enumerate(results['ids']):
+            metadata = results['metadatas'][i]
+            operation = {
+                'id': merge_id,
+                'timestamp': metadata.get('timestamp', ''),
+                'kept_title': metadata.get('kept_title', ''),
+                'deleted_title': metadata.get('deleted_title', ''),
+                'kept_page_id': metadata.get('kept_page_id', ''),
+                'deleted_page_id': metadata.get('deleted_page_id', ''),
+                'status': metadata.get('status', 'completed'),
+                'kept_url': metadata.get('kept_url', ''),
+                'deleted_url': metadata.get('deleted_url', '')
+            }
+            merge_operations.append(operation)
+        
+        # Sort by timestamp (most recent first)
+        merge_operations.sort(key=lambda x: x['timestamp'], reverse=True)
+        
+        return merge_operations[:limit]
+        
+    except Exception as e:
+        print(f"Error getting recent merges: {e}")
+        return []
+
 def update_chroma_after_merge(main_doc, similar_doc, keep_main=True):
     """Update Chroma database after successful merge to remove duplicate relationships"""
     try:
@@ -318,7 +795,7 @@ def update_chroma_after_merge(main_doc, similar_doc, keep_main=True):
         return False, f"Error updating Chroma database: {str(e)}"
 
 def apply_merge_to_confluence(main_doc, similar_doc, merged_content, keep_main=True):
-    """Apply the merge to Confluence: update one page, delete the other"""
+    """Apply the merge to Confluence: update one page, delete the other, and track the operation"""
     try:
         # Extract page IDs from URLs
         main_page_id = extract_page_id_from_url(main_doc.metadata.get('source'))
@@ -345,10 +822,26 @@ def apply_merge_to_confluence(main_doc, similar_doc, merged_content, keep_main=T
             keep_page_id = main_page_id
             delete_page_id = similar_page_id
             keep_title = main_doc.metadata.get('title', 'Merged Document')
+            delete_title = similar_doc.metadata.get('title', 'Deleted Document')
+            keep_url = main_doc.metadata.get('source', '')
+            delete_url = similar_doc.metadata.get('source', '')
         else:
             keep_page_id = similar_page_id
             delete_page_id = main_page_id
             keep_title = similar_doc.metadata.get('title', 'Merged Document')
+            delete_title = main_doc.metadata.get('title', 'Deleted Document')
+            keep_url = similar_doc.metadata.get('source', '')
+            delete_url = main_doc.metadata.get('source', '')
+        
+        # Store merge operation BEFORE making changes
+        store_success, store_message = store_merge_operation(
+            keep_page_id, delete_page_id, merged_content, 
+            keep_title, delete_title, keep_url, delete_url
+        )
+        
+        if not store_success:
+            print(f"WARNING: Could not store merge operation: {store_message}")
+            # Continue anyway since tracking is not critical for the merge itself
         
         # Convert content to Confluence storage format
         confluence_content = convert_markdown_to_confluence_storage(merged_content)
@@ -375,9 +868,20 @@ def apply_merge_to_confluence(main_doc, similar_doc, merged_content, keep_main=T
         if not chroma_success:
             # Log the error but don't fail the entire operation since Confluence was updated successfully
             print(f"WARNING: Confluence merge succeeded but Chroma update failed: {chroma_message}")
-            return True, f"Successfully merged documents. Updated '{keep_title}' and deleted duplicate page. Warning: {chroma_message}"
+            success_message = f"Successfully merged documents. Updated '{keep_title}' and deleted duplicate page."
+            if store_success:
+                success_message += " Merge operation tracked for undo capability."
+            else:
+                success_message += f" Warning: Merge tracking failed - {store_message}"
+            return True, success_message
         
-        return True, f"Successfully merged documents. Updated '{keep_title}', deleted duplicate page, and updated database."
+        success_message = f"Successfully merged documents. Updated '{keep_title}', deleted duplicate page, and updated database."
+        if store_success:
+            success_message += " Merge operation tracked for undo capability."
+        else:
+            success_message += f" Warning: Merge tracking failed - {store_message}"
+        
+        return True, success_message
     
     except Exception as e:
         return False, f"Error applying merge to Confluence: {str(e)}"
@@ -478,6 +982,10 @@ with st.sidebar:
     
     if st.button("📋 Detected Duplicates", use_container_width=True):
         st.session_state.page = 'duplicates'
+        st.rerun()
+    
+    if st.button("🕒 Recent Merges", use_container_width=True):
+        st.session_state.page = 'recent_merges'
         st.rerun()
     
     st.markdown("---")
@@ -610,6 +1118,54 @@ if st.session_state.page == 'dashboard':
         # Calculate documents involved in duplicates
         docs_with_duplicates = len(duplicate_pairs) * 2  # Each pair involves 2 docs
         st.metric("Documents with Duplicates", docs_with_duplicates)
+    
+    # Maintenance section
+    st.markdown("---")
+    st.markdown("## 🔧 Maintenance")
+    
+    maint_col1, maint_col2 = st.columns(2)
+    
+    with maint_col1:
+        st.markdown("### 🔍 Duplicate Detection")
+        st.markdown("Manually scan all documents to find new duplicate pairs. This is useful after undoing merges or when new content is added.")
+        
+        if st.button("🔄 Scan for Duplicates", use_container_width=True, help="Re-scan all documents for duplicate pairs"):
+            with st.spinner("Scanning documents for duplicates..."):
+                scan_result = scan_for_duplicates(similarity_threshold=0.65, update_existing=True)
+                
+                if scan_result['success']:
+                    if scan_result['pairs_found'] > 0:
+                        st.success(f"✅ Scan completed! Found {scan_result['pairs_found']} duplicate pairs and updated {scan_result['documents_updated']} documents.")
+                        # Refresh the page to show new duplicates
+                        time.sleep(1)
+                        st.rerun()
+                    else:
+                        st.info("✅ Scan completed. No duplicate pairs found.")
+                else:
+                    st.error(f"❌ Scan failed: {scan_result['message']}")
+    
+    with maint_col2:
+        st.markdown("### ⚙️ Advanced Settings")
+        st.markdown("Advanced maintenance and configuration options.")
+        
+        # Show last scan info if available
+        try:
+            all_docs = db.get()
+            if all_docs['metadatas']:
+                last_scan_times = []
+                for metadata in all_docs['metadatas']:
+                    last_scan = metadata.get('last_similarity_scan')
+                    if last_scan:
+                        last_scan_times.append(last_scan)
+                
+                if last_scan_times:
+                    # Get the most recent scan time
+                    most_recent_scan = max(last_scan_times)
+                    st.info(f"Last duplicate scan: {most_recent_scan[:19]}")
+                else:
+                    st.info("No previous duplicate scans found")
+        except:
+            st.info("Could not retrieve scan history")
     
     with stat_col4:
         # Calculate potential space saved (placeholder)
@@ -758,6 +1314,32 @@ elif st.session_state.page == 'duplicates':
     st.title("📋 Detected Duplicates")
     st.markdown("Review and manage all document pairs that have been automatically detected as potential duplicates.")
     
+    # Quick actions row
+    action_col1, action_col2, action_col3 = st.columns([1, 1, 2])
+    
+    with action_col1:
+        if st.button("🔄 Scan for New Duplicates", help="Re-scan all documents to find new duplicate pairs"):
+            with st.spinner("Scanning for duplicates..."):
+                scan_result = scan_for_duplicates(similarity_threshold=0.65, update_existing=True)
+                
+                if scan_result['success']:
+                    if scan_result['pairs_found'] > 0:
+                        st.success(f"Found {scan_result['pairs_found']} duplicate pairs!")
+                        time.sleep(1)
+                        st.rerun()
+                    else:
+                        st.info("No new duplicate pairs found.")
+                else:
+                    st.error(f"Scan failed: {scan_result['message']}")
+    
+    with action_col2:
+        st.write("")  # Placeholder for future actions
+    
+    with action_col3:
+        st.write("")  # Placeholder for future actions
+    
+    st.markdown("---")
+    
     # Get detected duplicates
     duplicate_pairs = get_detected_duplicates()
     
@@ -829,57 +1411,70 @@ elif st.session_state.page == 'duplicates':
                     """, unsafe_allow_html=True)
                 
                 with col_actions:
-                    if st.button("🔀 Merge", key=f"merge_dup_{i}", help="Merge these documents"):
+                    # Three-dot menu for additional actions
+                    menu_key = f"menu_dup_{i}"
+                    if menu_key not in st.session_state:
+                        st.session_state[menu_key] = False
+                    
+                    if st.button("⋯", key=f"menu_btn_{i}", help="More actions"):
+                        st.session_state[menu_key] = not st.session_state[menu_key]
+                    
+                    # Show dropdown menu if toggled
+                    if st.session_state[menu_key]:
+                        if st.button("👀 Preview", key=f"preview_{i}", help="Preview both documents", use_container_width=True):
+                            st.info("Preview functionality coming soon!")
+                            st.session_state[menu_key] = False
+                        
+                        if st.button("❌ Not Duplicate", key=f"not_dup_{i}", help="Mark as not duplicate", use_container_width=True):
+                            st.info("Not duplicate functionality coming soon!")
+                            st.session_state[menu_key] = False
+                        
+                        if st.button("⏭️ Skip", key=f"skip_{i}", help="Skip for now", use_container_width=True):
+                            st.info("Skip functionality coming soon!")
+                            st.session_state[menu_key] = False
+                        
+                        if st.button("📝 Details", key=f"details_{i}", help="View detailed comparison", use_container_width=True):
+                            st.info("Details functionality coming soon!")
+                            st.session_state[menu_key] = False
+                
+                # Content preview row
+                col_left, col_right = st.columns(2)
+                
+                with col_left:
+                    # Show source link next to title as emoji
+                    main_source = pair['main_doc'].metadata.get('source', '')
+                    if main_source:
+                        st.markdown(f"**📄 {pair['main_title']}** [🔗]({main_source})")
+                    else:
+                        st.markdown(f"**📄 {pair['main_title']}**")
+                    
+                    main_content = pair['main_doc'].page_content
+                    preview = main_content[:150] + "..." if len(main_content) > 150 else main_content
+                    st.text(preview)
+                
+                with col_right:
+                    # Show source link next to title as emoji
+                    similar_source = pair['similar_doc'].metadata.get('source', '')
+                    if similar_source:
+                        st.markdown(f"**� {pair['similar_title']}** [🔗]({similar_source})")
+                    else:
+                        st.markdown(f"**📄 {pair['similar_title']}**")
+                    
+                    similar_content = pair['similar_doc'].page_content
+                    preview = similar_content[:150] + "..." if len(similar_content) > 150 else similar_content
+                    st.text(preview)
+                
+                # Merge button at bottom left
+                col_merge, col_spacer = st.columns([1, 3])
+                
+                with col_merge:
+                    if st.button("🔀 Merge", key=f"merge_dup_{i}", help="Merge these documents", use_container_width=True):
                         st.session_state.merge_docs = {
                             'main_doc': pair['main_doc'],
                             'similar_docs': [pair['similar_doc']]
                         }
                         st.session_state.page = 'merge'
                         st.rerun()
-                
-                # Content preview row
-                col_left, col_right = st.columns(2)
-                
-                with col_left:
-                    st.markdown(f"**📄 {pair['main_title']}**")
-                    main_content = pair['main_doc'].page_content
-                    preview = main_content[:150] + "..." if len(main_content) > 150 else main_content
-                    st.text(preview)
-                    
-                    # Show source if available
-                    main_source = pair['main_doc'].metadata.get('source', '')
-                    if main_source:
-                        st.markdown(f"[🔗 View Source]({main_source})")
-                
-                with col_right:
-                    st.markdown(f"**📄 {pair['similar_title']}**")
-                    similar_content = pair['similar_doc'].page_content
-                    preview = similar_content[:150] + "..." if len(similar_content) > 150 else similar_content
-                    st.text(preview)
-                    
-                    # Show source if available
-                    similar_source = pair['similar_doc'].metadata.get('source', '')
-                    if similar_source:
-                        st.markdown(f"[🔗 View Source]({similar_source})")
-                
-                # Action buttons row
-                col_btn1, col_btn2, col_btn3, col_btn4 = st.columns(4)
-                
-                with col_btn1:
-                    if st.button("👀 Preview", key=f"preview_{i}", help="Preview both documents"):
-                        st.info("Preview functionality coming soon!")
-                
-                with col_btn2:
-                    if st.button("❌ Not Duplicate", key=f"not_dup_{i}", help="Mark as not duplicate"):
-                        st.info("Not duplicate functionality coming soon!")
-                
-                with col_btn3:
-                    if st.button("⏭️ Skip", key=f"skip_{i}", help="Skip for now"):
-                        st.info("Skip functionality coming soon!")
-                
-                with col_btn4:
-                    if st.button("📝 Details", key=f"details_{i}", help="View detailed comparison"):
-                        st.info("Details functionality coming soon!")
                 
                 st.markdown("</div>", unsafe_allow_html=True)
     else:
@@ -1068,3 +1663,164 @@ elif st.session_state.page == 'merge':
         
         else:
             st.info("💡 Generate merged content first to enable Confluence integration.")
+
+elif st.session_state.page == 'recent_merges':
+    st.title("🕒 Recent Merges")
+    st.markdown("View and manage recent merge operations with undo capability using Confluence native features.")
+    
+    # Get recent merges
+    recent_merges = get_recent_merges()
+    
+    if not recent_merges:
+        st.info("📭 No recent merge operations found.")
+        st.markdown("### 💡 Getting Started")
+        st.markdown("- Use the **Search** page to find similar documents")
+        st.markdown("- Merge documents using the **Detected Duplicates** page")
+        st.markdown("- All merge operations will appear here with undo capability")
+    else:
+        # Statistics
+        completed_merges = [m for m in recent_merges if m['status'] == 'completed']
+        undone_merges = [m for m in recent_merges if m['status'] == 'undone']
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Total Merges", len(recent_merges))
+        with col2:
+            st.metric("Active Merges", len(completed_merges))
+        with col3:
+            st.metric("Undone Merges", len(undone_merges))
+        
+        st.markdown("---")
+        
+        # Filter options
+        st.markdown("### 🔍 Filters")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            status_filter = st.selectbox(
+                "Status", 
+                ["All", "Completed", "Undone"],
+                help="Filter merges by status"
+            )
+        
+        with col2:
+            sort_order = st.selectbox(
+                "Sort By", 
+                ["Most Recent", "Oldest First", "Title A-Z"],
+                help="Sort merges by different criteria"
+            )
+        
+        # Apply filters
+        filtered_merges = recent_merges.copy()
+        if status_filter == "Completed":
+            filtered_merges = [m for m in filtered_merges if m['status'] == 'completed']
+        elif status_filter == "Undone":
+            filtered_merges = [m for m in filtered_merges if m['status'] == 'undone']
+        
+        # Apply sorting
+        if sort_order == "Oldest First":
+            filtered_merges.reverse()
+        elif sort_order == "Title A-Z":
+            filtered_merges.sort(key=lambda x: x['kept_title'].lower())
+        
+        st.markdown("---")
+        
+        # Display merge operations
+        if not filtered_merges:
+            st.info(f"No merge operations found with status: {status_filter}")
+        else:
+            st.markdown(f"### 📊 Showing {len(filtered_merges)} Operations")
+            
+            for i, merge in enumerate(filtered_merges):
+                with st.container():
+                    # Create a styled container for each merge
+                    if merge['status'] == 'completed':
+                        border_color = "#28a745"  # Green for completed
+                        status_emoji = "✅"
+                    else:
+                        border_color = "#6c757d"  # Gray for undone
+                        status_emoji = "↩️"
+                    
+                    st.markdown(f"""
+                    <div style="border: 2px solid {border_color}; border-radius: 8px; padding: 16px; margin-bottom: 16px; background-color: #f8f9fa;">
+                    """, unsafe_allow_html=True)
+                    
+                    # Header row with title and status
+                    col_header, col_status = st.columns([4, 1])
+                    
+                    with col_header:
+                        st.markdown(f"**{status_emoji} Merge #{i+1}:** {merge['kept_title']} ← {merge['deleted_title']}")
+                        
+                        # Format timestamp
+                        try:
+                            from datetime import datetime
+                            timestamp = datetime.fromisoformat(merge['timestamp'].replace('Z', '+00:00'))
+                            formatted_time = timestamp.strftime("%Y-%m-%d %H:%M:%S")
+                            st.caption(f"🕒 {formatted_time}")
+                        except:
+                            st.caption(f"🕒 {merge['timestamp']}")
+                    
+                    with col_status:
+                        if merge['status'] == 'completed':
+                            st.success("Active")
+                        else:
+                            st.info("Undone")
+                    
+                    # Details row
+                    col_left, col_right = st.columns(2)
+                    
+                    with col_left:
+                        st.markdown("**📄 Kept Page:**")
+                        st.markdown(f"• **Title:** {merge['kept_title']}")
+                        st.markdown(f"• **Page ID:** {merge['kept_page_id']}")
+                        if merge.get('kept_url'):
+                            st.markdown(f"• [🔗 View Page]({merge['kept_url']})")
+                    
+                    with col_right:
+                        st.markdown("**🗑️ Deleted Page:**")
+                        st.markdown(f"• **Title:** {merge['deleted_title']}")
+                        st.markdown(f"• **Page ID:** {merge['deleted_page_id']}")
+                        if merge.get('deleted_url'):
+                            st.markdown(f"• [🔗 Original URL]({merge['deleted_url']})")
+                    
+                    # Action buttons
+                    if merge['status'] == 'completed':
+                        col_btn1, col_btn2 = st.columns(2)
+                        
+                        with col_btn1:
+                            if st.button(f"↩️ Undo Merge", key=f"undo_{merge['id']}", 
+                                       help="Restore both original pages using Confluence native restore",
+                                       type="primary"):
+                                with st.spinner("Undoing merge operation..."):
+                                    success, message = undo_merge_operation(merge['id'])
+                                    if success:
+                                        st.success(f"✅ {message}")
+                                        time.sleep(2)  # Brief pause for user to see success
+                                        st.rerun()
+                                    else:
+                                        st.error(f"❌ {message}")
+                        
+                        with col_btn2:
+                            if st.button(f"🔗 View Result", key=f"view_{merge['id']}", 
+                                       help="Open the merged page in Confluence"):
+                                if merge.get('kept_url'):
+                                    st.markdown(f"[🔗 Open Merged Page]({merge['kept_url']})")
+                                else:
+                                    st.info("Page URL not available")
+                    
+                    else:  # Undone merges
+                        st.caption("🔒 This merge operation was undone. Both original pages should be restored.")
+                    
+                    st.markdown("</div>", unsafe_allow_html=True)
+        
+        st.markdown("---")
+        st.markdown("### ℹ️ How Undo Works")
+        st.markdown("""
+        **DocJanitor uses Confluence's native capabilities for undo operations:**
+        - **Version Restore**: The kept page is reverted to its pre-merge version using Confluence version history
+        - **Trash Restore**: The deleted page is restored from Confluence trash
+        - **No Data Loss**: All original content is preserved through Confluence's built-in features
+        - **Reliable**: Uses official Confluence REST API endpoints for all operations
+        """)
+
+        st.info("💡 **Tip**: Recent merges are tracked automatically. You can undo any merge operation as long as the pages haven't been permanently deleted from Confluence trash.")

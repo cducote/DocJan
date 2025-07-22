@@ -49,7 +49,7 @@ embedding_matrix = np.array(doc_embeddings)
 similarity_matrix = cosine_similarity(embedding_matrix)
 
 # Find similar document pairs above threshold
-similarity_threshold = 0.75  # Adjust this if needed
+similarity_threshold = 0.65  # Lowered from 0.75 to catch more pairs
 similar_pairs = []
 similar_docs_metadata = {}
 
