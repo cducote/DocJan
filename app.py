@@ -526,15 +526,116 @@ def restore_confluence_page_version(page_id, version_number):
         print(f"DEBUG: Exception in restore_confluence_page_version: {e}")
         return False, f"Error restoring page version: {str(e)}"
 
-def restore_deleted_confluence_page(page_id):
-    """Restore a deleted Confluence page from trash"""
+def check_single_document_for_duplicates(document, similarity_threshold=0.65):
+    """Check a single document against existing ChromaDB documents for duplicates"""
+    try:
+        # Generate embedding for the document
+        document_embedding = embeddings.embed_query(document.page_content)
+        
+        # Get all existing documents from ChromaDB
+        all_docs = db.get()
+        
+        if not all_docs['documents']:
+            print("DEBUG: No existing documents in ChromaDB to compare against")
+            return []
+        
+        # Generate embeddings for existing documents (if not already stored)
+        existing_embeddings = []
+        for existing_content in all_docs['documents']:
+            existing_embedding = embeddings.embed_query(existing_content)
+            existing_embeddings.append(existing_embedding)
+        
+        # Calculate similarity scores
+        import numpy as np
+        from sklearn.metrics.pairwise import cosine_similarity
+        
+        document_embedding = np.array(document_embedding).reshape(1, -1)
+        existing_embeddings = np.array(existing_embeddings)
+        
+        similarity_scores = cosine_similarity(document_embedding, existing_embeddings)[0]
+        
+        # Find similar documents above threshold
+        similar_docs = []
+        for i, score in enumerate(similarity_scores):
+            if score >= similarity_threshold:
+                existing_metadata = all_docs['metadatas'][i]
+                similar_docs.append({
+                    'index': i,
+                    'score': score,
+                    'title': existing_metadata.get('title', 'Untitled'),
+                    'doc_id': existing_metadata.get('doc_id', f'doc_{i}'),
+                    'metadata': existing_metadata
+                })
+                print(f"DEBUG: Found similar document: '{existing_metadata.get('title')}' (similarity: {score:.3f})")
+        
+        # If we found similar documents, update the metadata relationships
+        if similar_docs:
+            # Create a new doc_id for the restored document
+            new_doc_id = f"restored_{document.metadata.get('page_id', 'unknown')}"
+            
+            # Update existing documents to reference the new document
+            for similar_doc in similar_docs:
+                existing_doc_id = similar_doc['doc_id']
+                existing_metadata = similar_doc['metadata']
+                
+                # Add the new document to the existing document's similar_docs list
+                current_similar = existing_metadata.get('similar_docs', '')
+                if current_similar:
+                    similar_ids = [id.strip() for id in current_similar.split(',') if id.strip()]
+                else:
+                    similar_ids = []
+                
+                if new_doc_id not in similar_ids:
+                    similar_ids.append(new_doc_id)
+                    existing_metadata['similar_docs'] = ','.join(similar_ids)
+                    
+                    # Update the document in ChromaDB
+                    try:
+                        # Delete and re-add with updated metadata
+                        chroma_id = all_docs['ids'][similar_doc['index']]
+                        db.delete([chroma_id])
+                        
+                        updated_doc = Document(
+                            page_content=all_docs['documents'][similar_doc['index']],
+                            metadata=existing_metadata
+                        )
+                        db.add_documents([updated_doc], ids=[chroma_id])
+                        print(f"DEBUG: Updated metadata for document '{similar_doc['title']}'")
+                    except Exception as e:
+                        print(f"DEBUG: Error updating document metadata: {e}")
+            
+            # Add the restored document to ChromaDB with its similar_docs metadata
+            similar_doc_ids = [doc['doc_id'] for doc in similar_docs]
+            document.metadata['similar_docs'] = ','.join(similar_doc_ids)
+            document.metadata['doc_id'] = new_doc_id
+            
+            # Add to ChromaDB
+            try:
+                db.add_documents([document], ids=[new_doc_id])
+                print(f"DEBUG: Added restored document to ChromaDB with {len(similar_docs)} similar documents")
+            except Exception as e:
+                print(f"DEBUG: Error adding restored document to ChromaDB: {e}")
+        
+        return similar_docs
+        
+    except Exception as e:
+        print(f"DEBUG: Error checking document for duplicates: {e}")
+        return []
+
+def restore_deleted_confluence_page_without_duplicate_check(page_id):
+    """Restore a deleted Confluence page from trash without checking for duplicates"""
     try:
         # First, check if the page exists in trash
-        check_url = f"{CONFLUENCE_BASE_URL}/rest/api/content/{page_id}?status=trashed"
+        check_url = f"{CONFLUENCE_BASE_URL}/rest/api/content/{page_id}?status=trashed&expand=body.storage"
         check_response = requests.get(check_url, auth=get_confluence_auth())
         
         if check_response.status_code != 200:
             return False, f"Page {page_id} not found in trash: {check_response.status_code} - {check_response.text}"
+        
+        # Get page data
+        page_data = check_response.json()
+        page_title = page_data.get('title', 'Restored Page')
+        page_content = page_data.get('body', {}).get('storage', {}).get('value', '')
         
         # Method 1: Try the standard restore endpoint with confirmation
         restore_url = f"{CONFLUENCE_BASE_URL}/rest/api/content/{page_id}/restore"
@@ -558,50 +659,159 @@ def restore_deleted_confluence_page(page_id):
             json=restore_data
         )
         
+        restore_success = False
         if response.status_code == 200:
-            return True, "Page restored from trash successfully"
-        
-        # Method 2: If that fails, try without the body (some versions don't need it)
-        response = requests.post(restore_url, auth=get_confluence_auth(), headers=headers)
-        
-        if response.status_code == 200:
-            return True, "Page restored from trash successfully"
-        
-        # Method 3: Try using PUT to change the status from trashed to current
-        update_url = f"{CONFLUENCE_BASE_URL}/rest/api/content/{page_id}"
-        
-        # Get the current page data first
-        page_data = check_response.json()
-        current_version = page_data.get('version', {}).get('number', 1)
-        
-        # Update the page status
-        update_data = {
-            "version": {
-                "number": current_version + 1
-            },
-            "title": page_data.get('title', 'Restored Page'),
-            "type": "page",
-            "status": "current",  # Change from trashed to current
-            "body": {
-                "storage": {
-                    "value": page_data.get('body', {}).get('storage', {}).get('value', '<p>Restored content</p>'),
-                    "representation": "storage"
+            restore_success = True
+        else:
+            # Method 2: If that fails, try without the body (some versions don't need it)
+            response = requests.post(restore_url, auth=get_confluence_auth(), headers=headers)
+            
+            if response.status_code == 200:
+                restore_success = True
+            else:
+                # Method 3: Try using PUT to change the status from trashed to current
+                update_url = f"{CONFLUENCE_BASE_URL}/rest/api/content/{page_id}"
+                current_version = page_data.get('version', {}).get('number', 1)
+                
+                # Update the page status
+                update_data = {
+                    "version": {
+                        "number": current_version + 1
+                    },
+                    "title": page_title,
+                    "type": "page",
+                    "status": "current",  # Change from trashed to current
+                    "body": {
+                        "storage": {
+                            "value": page_content,
+                            "representation": "storage"
+                        }
+                    }
                 }
-            }
+                
+                response = requests.put(
+                    update_url,
+                    auth=get_confluence_auth(),
+                    headers=headers,
+                    json=update_data
+                )
+                
+                if response.status_code == 200:
+                    restore_success = True
+        
+        if not restore_success:
+            return False, f"All restore methods failed. Last error: {response.status_code} - {response.text}"
+        
+        print(f"DEBUG: Successfully restored page '{page_title}' without duplicate checking")
+        return True, "Page restored from trash successfully"
+        
+    except Exception as e:
+        return False, f"Error restoring page from trash: {str(e)}"
+
+def restore_deleted_confluence_page(page_id):
+    """Restore a deleted Confluence page from trash and check for duplicates"""
+    try:
+        # First, check if the page exists in trash
+        check_url = f"{CONFLUENCE_BASE_URL}/rest/api/content/{page_id}?status=trashed&expand=body.storage"
+        check_response = requests.get(check_url, auth=get_confluence_auth())
+        
+        if check_response.status_code != 200:
+            return False, f"Page {page_id} not found in trash: {check_response.status_code} - {check_response.text}"
+        
+        # Get page data for later duplicate checking
+        page_data = check_response.json()
+        page_title = page_data.get('title', 'Restored Page')
+        page_content = page_data.get('body', {}).get('storage', {}).get('value', '')
+        
+        # Method 1: Try the standard restore endpoint with confirmation
+        restore_url = f"{CONFLUENCE_BASE_URL}/rest/api/content/{page_id}/restore"
+        
+        # Add headers to indicate we're programmatically confirming the restore
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json"
         }
         
-        response = requests.put(
-            update_url,
+        # Some Confluence instances may require a body with confirmation
+        restore_data = {
+            "confirm": True,
+            "restoreMode": "full"  # Restore the full page
+        }
+        
+        response = requests.post(
+            restore_url, 
             auth=get_confluence_auth(),
             headers=headers,
-            json=update_data
+            json=restore_data
         )
         
+        restore_success = False
         if response.status_code == 200:
-            return True, "Page restored from trash successfully (via status update)"
+            restore_success = True
+        else:
+            # Method 2: If that fails, try without the body (some versions don't need it)
+            response = requests.post(restore_url, auth=get_confluence_auth(), headers=headers)
+            
+            if response.status_code == 200:
+                restore_success = True
+            else:
+                # Method 3: Try using PUT to change the status from trashed to current
+                update_url = f"{CONFLUENCE_BASE_URL}/rest/api/content/{page_id}"
+                current_version = page_data.get('version', {}).get('number', 1)
+                
+                # Update the page status
+                update_data = {
+                    "version": {
+                        "number": current_version + 1
+                    },
+                    "title": page_title,
+                    "type": "page",
+                    "status": "current",  # Change from trashed to current
+                    "body": {
+                        "storage": {
+                            "value": page_content,
+                            "representation": "storage"
+                        }
+                    }
+                }
+                
+                response = requests.put(
+                    update_url,
+                    auth=get_confluence_auth(),
+                    headers=headers,
+                    json=update_data
+                )
+                
+                if response.status_code == 200:
+                    restore_success = True
         
-        return False, f"All restore methods failed. Last error: {response.status_code} - {response.text}"
-    
+        if not restore_success:
+            return False, f"All restore methods failed. Last error: {response.status_code} - {response.text}"
+        
+        # NOW: Check for duplicates with the restored page
+        print(f"DEBUG: Checking restored page '{page_title}' for duplicates...")
+        
+        # Create a document object for the restored page
+        from langchain.schema import Document as LangchainDocument
+        restored_doc = LangchainDocument(
+            page_content=page_content,
+            metadata={
+                'title': page_title,
+                'source': f"{CONFLUENCE_BASE_URL}/pages/viewpage.action?pageId={page_id}",
+                'page_id': page_id
+            }
+        )
+        
+        # Check for duplicates against existing ChromaDB documents
+        duplicate_found = check_single_document_for_duplicates(restored_doc)
+        
+        if duplicate_found:
+            print(f"DEBUG: Found duplicates for restored page '{page_title}'")
+            return True, f"Page restored from trash successfully. Found {len(duplicate_found)} similar documents."
+        else:
+            print(f"DEBUG: No duplicates found for restored page '{page_title}'")
+            return True, "Page restored from trash successfully"
+        
     except Exception as e:
         return False, f"Error restoring page from trash: {str(e)}"
 
@@ -632,9 +842,9 @@ def undo_merge_operation(merge_id):
         
         print(f"DEBUG: Successfully restored kept page to version {kept_page_version}")
         
-        # Step 2: Restore the deleted page from trash
+        # Step 2: Restore the deleted page from trash (without duplicate checking)
         print(f"DEBUG: Attempting to restore deleted page {deleted_page_id} from trash")
-        restore_success, restore_message = restore_deleted_confluence_page(deleted_page_id)
+        restore_success, restore_message = restore_deleted_confluence_page_without_duplicate_check(deleted_page_id)
         if not restore_success:
             return False, f"Failed to restore deleted page: {restore_message}"
         
@@ -653,7 +863,48 @@ def undo_merge_operation(merge_id):
         )
         merge_collection.add_documents([undo_doc], ids=[merge_id])
         
-        # Step 4: Automatically scan for duplicates after undo
+        # Step 4: Re-ingest both restored pages to ChromaDB and scan for duplicates
+        print("DEBUG: Re-ingesting restored pages to ChromaDB...")
+        
+        # Re-load both pages from Confluence and add them back to ChromaDB
+        try:
+            # Import the loader to re-ingest the restored pages
+            loader = ConfluenceLoader(
+                url=CONFLUENCE_BASE_URL,
+                username=CONFLUENCE_USERNAME,
+                api_key=CONFLUENCE_API_TOKEN,
+                page_ids=[kept_page_id, deleted_page_id],
+                include_attachments=False,
+                limit=None
+            )
+            
+            restored_documents = loader.load()
+            print(f"DEBUG: Loaded {len(restored_documents)} restored documents from Confluence")
+            
+            # Add the restored documents back to ChromaDB
+            if restored_documents:
+                # Generate document IDs
+                doc_ids = []
+                for doc in restored_documents:
+                    page_id = extract_page_id_from_url(doc.metadata.get('source', ''))
+                    if page_id:
+                        doc_id = f"page_{page_id}"
+                        doc.metadata['doc_id'] = doc_id
+                        doc_ids.append(doc_id)
+                    else:
+                        doc_id = f"restored_{len(doc_ids)}"
+                        doc.metadata['doc_id'] = doc_id
+                        doc_ids.append(doc_id)
+                
+                # Add to ChromaDB
+                db.add_documents(restored_documents, ids=doc_ids)
+                print(f"DEBUG: Added {len(restored_documents)} restored documents to ChromaDB")
+            
+        except Exception as e:
+            print(f"DEBUG: Error re-ingesting restored pages: {e}")
+            # Continue with scan anyway
+        
+        # Step 5: Automatically scan for duplicates after undo
         print("DEBUG: Running automatic duplicate detection after undo...")
         scan_result = scan_for_duplicates(similarity_threshold=0.65, update_existing=True)
         
