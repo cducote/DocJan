@@ -3,7 +3,8 @@ import os
 import requests
 import json
 import time
-from datetime import datetime
+from datetime import datetime, timezone
+import pytz
 from dotenv import load_dotenv
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_chroma import Chroma
@@ -17,6 +18,38 @@ class Document:
     def __init__(self, page_content, metadata=None):
         self.page_content = page_content
         self.metadata = metadata or {}
+
+def format_timestamp_to_est(iso_timestamp):
+    """Convert ISO timestamp to readable EST format"""
+    try:
+        # Parse the ISO timestamp
+        if iso_timestamp.endswith('Z'):
+            # Remove Z and treat as UTC
+            dt = datetime.fromisoformat(iso_timestamp[:-1]).replace(tzinfo=timezone.utc)
+        elif '+' in iso_timestamp or iso_timestamp.count('-') > 2:
+            # Has timezone info - parse directly
+            dt = datetime.fromisoformat(iso_timestamp)
+        else:
+            # No timezone info - assume it's already in local EST/EDT time
+            dt = datetime.fromisoformat(iso_timestamp)
+            est = pytz.timezone('US/Eastern')
+            # If no timezone, assume it's already in EST/EDT
+            dt = est.localize(dt)
+        
+        # If the datetime has timezone info, convert to EST/EDT
+        if dt.tzinfo is not None:
+            est = pytz.timezone('US/Eastern')
+            dt_est = dt.astimezone(est)
+        else:
+            # If no timezone info, assume it's already EST/EDT
+            dt_est = dt
+        
+        # Format as readable string
+        return dt_est.strftime("%B %d, %Y at %I:%M %p %Z")
+    except Exception as e:
+        # Fallback to original if parsing fails
+        print(f"DEBUG: Error formatting timestamp {iso_timestamp}: {e}")
+        return iso_timestamp[:19].replace('T', ' ')
 
 # Load environment variables
 load_dotenv()
@@ -348,7 +381,10 @@ def scan_for_duplicates(similarity_threshold=0.65, update_existing=True):
                 updated_metadata = metadata.copy()
                 updated_metadata['similar_docs'] = new_similar_docs
                 updated_metadata['doc_id'] = doc_id  # Ensure doc_id is set
-                updated_metadata['last_similarity_scan'] = datetime.now().isoformat()
+                # Store timestamp with timezone info (EST/EDT)
+                est = pytz.timezone('US/Eastern')
+                current_time_est = datetime.now(est)
+                updated_metadata['last_similarity_scan'] = current_time_est.isoformat()
                 
                 documents_to_update.append({
                     'id': all_docs['ids'][i],
@@ -412,7 +448,7 @@ def store_merge_operation(kept_page_id, deleted_page_id, merged_content, kept_ti
         # Create merge record metadata
         merge_record = {
             "operation_type": "merge",
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.now(pytz.timezone('US/Eastern')).isoformat(),
             "kept_page_id": str(kept_page_id),
             "deleted_page_id": str(deleted_page_id),
             "kept_title": kept_title,
@@ -853,7 +889,7 @@ def undo_merge_operation(merge_id):
         # Step 3: Update merge operation status
         updated_metadata = merge_metadata.copy()
         updated_metadata['status'] = 'undone'
-        updated_metadata['undo_timestamp'] = datetime.now().isoformat()
+        updated_metadata['undo_timestamp'] = datetime.now(pytz.timezone('US/Eastern')).isoformat()
         
         # Remove old record and add updated one
         merge_collection.delete([merge_id])
@@ -1412,10 +1448,11 @@ if st.session_state.page == 'dashboard':
                 if last_scan_times:
                     # Get the most recent scan time
                     most_recent_scan = max(last_scan_times)
-                    st.info(f"Last duplicate scan: {most_recent_scan[:19]}")
+                    formatted_time = format_timestamp_to_est(most_recent_scan)
+                    st.info(f"Last duplicate scan: {formatted_time}")
                 else:
                     st.info("No previous duplicate scans found")
-        except:
+        except Exception as e:
             st.info("Could not retrieve scan history")
     
     with stat_col4:

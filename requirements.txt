@@ -28,6 +28,7 @@ atlassian-python-api>=3.41.0
 
 # Environment management
 python-dotenv>=1.0.0
+pytz>=2023.3
 
 # Database (PostgreSQL)
 psycopg2-binary>=2.9.0
