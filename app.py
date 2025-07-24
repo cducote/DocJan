@@ -1475,10 +1475,10 @@ elif st.session_state.page == 'search':
     # Check if there's a search query from dashboard
     initial_query = st.session_state.get('search_query', '')
     if initial_query:
-        # Clear the stored query
-        st.session_state.search_query = ''
+        # Clear the stored query after using it
+        del st.session_state.search_query
     
-    query = st.text_input("Enter your search query:", placeholder="e.g. onboarding, reset password...", key="search_query", value=initial_query)
+    query = st.text_input("Enter your search query:", placeholder="e.g. onboarding, reset password...", value=initial_query)
 
     # Run search when Enter is pressed or Search button is clicked
     if st.button("Search") or (query and query.strip()):
