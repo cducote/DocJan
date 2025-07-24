@@ -13,7 +13,7 @@ ENV/
 chroma_store/
 
 # Prompt templates (if they contain sensitive info)
-prompts/
+# prompts/
 
 # Python cache files
 __pycache__/
