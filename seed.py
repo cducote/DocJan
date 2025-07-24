@@ -219,7 +219,7 @@ def create_page(title, content):
         # Check if page already exists
         existing_page = confluence.get_page_by_title(SPACE_KEY, title)
         if existing_page:
-            print(f"⚠️  Page '{title}' already exists. Skipping...")
+            print(f">> Page '{title}' already exists. Skipping...")
             return False
         
         # Create the page
@@ -231,17 +231,17 @@ def create_page(title, content):
             type='page',
             representation='storage'
         )
-        print(f"✅ Created page: '{title}'")
+        print(f">> Created page: '{title}'")
         return True
     except Exception as e:
-        print(f"❌ Error creating page '{title}': {str(e)}")
+        print(f">> Error creating page '{title}': {str(e)}")
         return False
 
 def main():
     """Main function to seed the Confluence space"""
-    print("🚀 Starting Confluence space seeding...")
-    print(f"📍 Target space: {SPACE_KEY}")
-    print(f"📄 Pages to create: {len(documents)}")
+    print(">> Starting Confluence space seeding...")
+    print(f">> Target space: {SPACE_KEY}")
+    print(f">> Pages to create: {len(documents)}")
     print("-" * 50)
     
     created_count = 0
@@ -259,11 +259,11 @@ def main():
         time.sleep(1)
     
     print("-" * 50)
-    print("📊 Seeding Summary:")
-    print(f"✅ Pages created: {created_count}")
-    print(f"⚠️  Pages skipped: {skipped_count}")
-    print(f"📄 Total processed: {len(documents)}")
-    print("🎉 Seeding complete!")
+    print(">> Seeding Summary:")
+    print(f">> Pages created: {created_count}")
+    print(f">> Pages skipped: {skipped_count}")
+    print(f">> Total processed: {len(documents)}")
+    print(">> Seeding complete!")
 
 if __name__ == "__main__":
     main()

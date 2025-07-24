@@ -127,9 +127,77 @@ def reset_chroma_database():
         
         # Check if directory exists
         if os.path.exists(CHROMA_DB_DIR):
-            # Remove the entire directory
-            shutil.rmtree(CHROMA_DB_DIR)
-            print(f"✅ Deleted Chroma database directory: {CHROMA_DB_DIR}")
+            try:
+                # Try to create a ChromaDB instance first to properly close any connections
+                print("📋 Attempting to properly close ChromaDB connections...")
+                embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+                db = Chroma(persist_directory=CHROMA_DB_DIR, embedding_function=embeddings)
+                
+                # Try to delete all data from the database first
+                try:
+                    all_docs = db.get()
+                    if all_docs['ids']:
+                        db.delete(all_docs['ids'])
+                        print("🗑️  Deleted all documents from ChromaDB")
+                except Exception as e:
+                    print(f"⚠️  Could not delete documents from ChromaDB: {e}")
+                
+                # Force garbage collection to release file handles
+                del db
+                del embeddings
+                import gc
+                gc.collect()
+                
+                print("🔒 Closed ChromaDB connections")
+                
+                # Small delay to ensure file handles are released
+                import time
+                time.sleep(1)
+                
+            except Exception as e:
+                print(f"⚠️  Could not properly close ChromaDB: {e}")
+            
+            # Now try to remove the directory
+            try:
+                # On Windows, use more aggressive deletion
+                if os.name == 'nt':  # Windows
+                    print("🔧 Using Windows-specific deletion method...")
+                    import subprocess
+                    
+                    # Use Windows rmdir command which can be more aggressive
+                    try:
+                        subprocess.run(['rmdir', '/s', '/q', CHROMA_DB_DIR], 
+                                     shell=True, check=True, capture_output=True)
+                        print(f"✅ Deleted Chroma database directory using rmdir: {CHROMA_DB_DIR}")
+                    except subprocess.CalledProcessError:
+                        # Fallback to Python's shutil
+                        print("⚠️  rmdir failed, trying Python shutil...")
+                        shutil.rmtree(CHROMA_DB_DIR, ignore_errors=True)
+                        print(f"✅ Deleted Chroma database directory using shutil: {CHROMA_DB_DIR}")
+                else:
+                    # Unix/macOS - use standard method
+                    shutil.rmtree(CHROMA_DB_DIR)
+                    print(f"✅ Deleted Chroma database directory: {CHROMA_DB_DIR}")
+                
+            except Exception as e:
+                print(f"❌ Error deleting directory: {e}")
+                # Try to at least clear the contents
+                try:
+                    for root, dirs, files in os.walk(CHROMA_DB_DIR, topdown=False):
+                        for file in files:
+                            try:
+                                os.remove(os.path.join(root, file))
+                            except:
+                                pass
+                        for dir in dirs:
+                            try:
+                                os.rmdir(os.path.join(root, dir))
+                            except:
+                                pass
+                    print("⚠️  Partially cleared ChromaDB directory")
+                except Exception as e2:
+                    print(f"❌ Could not clear directory contents: {e2}")
+                    return False, f"Failed to reset ChromaDB: {str(e)}"
             
             # Recreate empty directory
             os.makedirs(CHROMA_DB_DIR, exist_ok=True)

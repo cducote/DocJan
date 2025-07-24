@@ -851,6 +851,67 @@ def restore_deleted_confluence_page(page_id):
     except Exception as e:
         return False, f"Error restoring page from trash: {str(e)}"
 
+def cleanup_duplicate_database_entries():
+    """Clean up duplicate entries in ChromaDB that have the same title"""
+    try:
+        if not db:
+            return False, "ChromaDB not available"
+        
+        # Get all documents from the database
+        all_docs = db.get()
+        
+        if not all_docs['ids']:
+            return True, "No documents to clean up"
+        
+        # Group documents by title
+        title_groups = {}
+        for i, doc_id in enumerate(all_docs['ids']):
+            metadata = all_docs['metadatas'][i]
+            title = metadata.get('title', 'Unknown')
+            
+            if title not in title_groups:
+                title_groups[title] = []
+            title_groups[title].append({
+                'id': doc_id,
+                'metadata': metadata,
+                'content': all_docs['documents'][i]
+            })
+        
+        # Find and remove duplicates
+        cleaned_count = 0
+        for title, docs in title_groups.items():
+            if len(docs) > 1:
+                print(f"DEBUG: Found {len(docs)} documents with title '{title}'")
+                
+                # Keep the document that looks most like the original seeded data (doc_ prefix)
+                # or the newest page_ document if no doc_ exists
+                keep_doc = None
+                remove_docs = []
+                
+                # Prefer doc_ prefixed IDs (original seeded data)
+                doc_prefixed = [d for d in docs if d['id'].startswith('doc_')]
+                if doc_prefixed:
+                    keep_doc = doc_prefixed[0]  # Keep the first doc_ prefixed one
+                    remove_docs = [d for d in docs if d != keep_doc]
+                else:
+                    # If no doc_ prefixed, keep the first one and remove others
+                    keep_doc = docs[0]
+                    remove_docs = docs[1:]
+                
+                # Remove duplicate documents
+                for remove_doc in remove_docs:
+                    try:
+                        db.delete([remove_doc['id']])
+                        print(f"DEBUG: Removed duplicate document '{remove_doc['id']}' with title '{title}'")
+                        cleaned_count += 1
+                    except Exception as e:
+                        print(f"DEBUG: Error removing document '{remove_doc['id']}': {e}")
+        
+        return True, f"Cleaned up {cleaned_count} duplicate database entries"
+        
+    except Exception as e:
+        return False, f"Error cleaning up duplicate entries: {str(e)}"
+
 def undo_merge_operation(merge_id):
     """Undo a merge operation using Confluence native restore capabilities"""
     try:
@@ -899,7 +960,15 @@ def undo_merge_operation(merge_id):
         )
         merge_collection.add_documents([undo_doc], ids=[merge_id])
         
-        # Step 4: Re-ingest both restored pages to ChromaDB and scan for duplicates
+        # Step 4: Clean up any duplicate database entries before re-ingesting
+        print("DEBUG: Cleaning up duplicate database entries...")
+        cleanup_success, cleanup_message = cleanup_duplicate_database_entries()
+        if cleanup_success:
+            print(f"DEBUG: {cleanup_message}")
+        else:
+            print(f"DEBUG: Cleanup warning: {cleanup_message}")
+        
+        # Step 5: Re-ingest both restored pages to ChromaDB and scan for duplicates
         print("DEBUG: Re-ingesting restored pages to ChromaDB...")
         
         # Re-load both pages from Confluence and add them back to ChromaDB
@@ -940,7 +1009,7 @@ def undo_merge_operation(merge_id):
             print(f"DEBUG: Error re-ingesting restored pages: {e}")
             # Continue with scan anyway
         
-        # Step 5: Automatically scan for duplicates after undo
+        # Step 6: Automatically scan for duplicates after undo
         print("DEBUG: Running automatic duplicate detection after undo...")
         scan_result = scan_for_duplicates(similarity_threshold=0.65, update_existing=True)
         
@@ -1278,6 +1347,19 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("### Current Page")
     st.info(f"📍 {st.session_state.page.title()}")
+    
+    # Database maintenance section
+    st.markdown("---")
+    st.markdown("### 🛠️ Database Maintenance")
+    
+    if st.button("🧹 Clean Duplicates", use_container_width=True, help="Remove duplicate database entries"):
+        with st.spinner("🧹 Cleaning up duplicate database entries..."):
+            cleanup_success, cleanup_message = cleanup_duplicate_database_entries()
+            if cleanup_success:
+                st.success(f"✅ {cleanup_message}")
+            else:
+                st.error(f"❌ {cleanup_message}")
+            st.rerun()
     
     # Reset section at the bottom
     st.markdown("---")
