@@ -1,0 +1,15 @@
+[
+  {
+    "id": "9528e5ae-bf4a-4b6b-bec0-03af9f87265d",
+    "kept_page_id": "5374215",
+    "deleted_page_id": "5439731",
+    "kept_title": "API Documentation - User Management",
+    "deleted_title": "REST API Guide - Account Management",
+    "timestamp": "2025-07-25T14:59:35.338409Z",
+    "status": "undone",
+    "merged_content": "<h1>User and Account Management API Guide</h1>\n\n<p>This guide provides comprehensive information on managing user accounts programmatically across systems using REST API. It covers authentication, authorization, and available endpoints for user and account management tasks.</p>\n\n<h2>Authentication and Authorization</h2>\n<p>All API requests require authentication to ensure secure operations. Use the following methods:</p>\n<ul>\n    <li><strong>Authentication:</strong> API keys or tokens are required for all requests.</li>\n    <li><strong>Authorization:</strong> Use <code>Bearer YOUR_API_KEY</code> or <code>Token YOUR_ACCESS_TOKEN</code> for authorization.</li>\n</ul>\n\n<h2>Core Endpoints</h2>\n<p>The API supports the following endpoints for managing user accounts:</p>\n\n<h3>Retrieve User Accounts</h3>\n<ul>\n    <li><strong>GET /api/users</strong>: Retrieve a list of all users in the system.</li>\n    <li><strong>GET /api/accounts</strong>: Fetch a list of user accounts from the system.</li>\n</ul>\n\n<h3>Create User Accounts</h3>\n<ul>\n    <li><strong>POST /api/users</strong>: Create a new user account with specified permissions.</li>\n    <li><strong>POST /api/accounts</strong>: Register a new user account with required details.</li>\n</ul>\n\n<h3>Update User Accounts</h3>\n<ul>\n    <li><strong>PUT /api/users/{id}</strong>: Update an existing user account and its properties.</li>\n    <li><strong>PATCH /api/accounts/{id}</strong>: Modify existing account details and permissions.</li>\n</ul>\n\n<h3>Delete User Accounts</h3>\n<ul>\n    <li><strong>DELETE /api/users/{id}</strong>: Delete a user account from the system permanently.</li>\n    <li><strong>DELETE /api/accounts/{id}</strong>: Remove a user account from the system database.</li>\n</ul>\n\n<p>This API provides comprehensive user and account management capabilities for both administrative tasks and personal applications.</p>\n\n<p><em>Merged by DocJanitor</em></p>",
+    "kept_url": "https://chrisducote89.atlassian.net/wiki/spaces/SD/pages/5374215/API+Documentation+-+User+Management",
+    "deleted_url": "https://chrisducote89.atlassian.net/wiki/spaces/~70121465f64cb86d84c92b0bdbc36762f880c/pages/5439731/REST+API+Guide+-+Account+Management",
+    "undo_timestamp": "2025-07-25T15:00:06.738979Z"
+  }
+]

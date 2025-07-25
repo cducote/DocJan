@@ -31,6 +31,20 @@ A Streamlit application for semantic search and AI-powered merging of Confluence
 - **UI Framework**: Streamlit for web interface
 - **Confluence API**: Direct integration with Confluence REST API
 
+### Module Structure
+```
+DocJanitor/
+├── ai/              # AI operations (merging, embeddings)
+├── config/          # Application configuration and settings
+├── confluence/      # Confluence API integration
+├── database/        # Database operations and document management  
+├── models/          # Data models and database structures
+├── prompts/         # Prompt templates for AI operations
+├── ui/              # Streamlit UI components and pages
+│   └── pages/       # Individual page renderers
+└── utils/           # Utility functions and helpers
+```
+
 ### Workflow
 1. **Document Loading**: Confluence documents are loaded and processed
 2. **Similarity Detection**: Documents are analyzed for semantic similarity

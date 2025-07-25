@@ -87,17 +87,17 @@ documents_by_space = {
             <p>This API provides comprehensive user management capabilities for administrative tasks.</p>
             """
         },
-        # SD Page 4 - Unique to SD space
+        # SD Page 4 - Similar to SD Page 5 (second within-space pair for SD)
         {
             "title": "SD System Troubleshooting Guide",
             "content": """
             <h2>SD System Issues and Solutions</h2>
-            <p>This document covers frequently encountered problems specific to the SD system.</p>
-            <h3>Login Problems</h3>
-            <p><strong>Issue:</strong> Cannot log in to the SD system</p>
-            <p><strong>Solution:</strong> Check your SD credentials, clear browser cache, or reset your SD password.</p>
+            <p>This document covers frequently encountered problems specific to the SD system environment.</p>
+            <h3>Common SD Login Problems</h3>
+            <p><strong>Issue:</strong> Cannot access the SD system dashboard</p>
+            <p><strong>Solution:</strong> Verify your SD credentials, clear browser cache, or reset your SD password through the admin panel.</p>
             <h3>SD Performance Issues</h3>
-            <p><strong>Issue:</strong> SD application running slowly</p>
+            <p><strong>Issue:</strong> SD application running slowly or timing out</p>
             <p><strong>Solution:</strong> Close unnecessary SD modules, restart the SD client, or contact SD support.</p>
             <h3>SD Network Connectivity</h3>
             <p><strong>Issue:</strong> Cannot connect to SD servers</p>
@@ -107,31 +107,24 @@ documents_by_space = {
             <p><strong>Solution:</strong> Force sync in SD settings, clear SD cache, or restart SD services.</p>
             """
         },
-        # SD Page 5 - Unique to SD space
+        # SD Page 5 - Similar to SD Page 4 (second within-space pair for SD)
         {
             "title": "SD Project Setup and Configuration",
             "content": """
-            <h2>Setting Up a New SD Project</h2>
-            <p>This guide walks you through setting up a new SD development project.</p>
-            <h3>SD Initial Setup</h3>
-            <ol>
-                <li>Create a new SD project directory</li>
-                <li>Initialize SD version control integration</li>
-                <li>Set up SD virtual environment</li>
-                <li>Install required SD dependencies</li>
-                <li>Configure SD database connections</li>
-            </ol>
-            <h3>SD Configuration Files</h3>
-            <p>Create the following SD-specific configuration files:</p>
-            <ul>
-                <li><code>sd.env</code> - SD environment variables</li>
-                <li><code>sd-requirements.txt</code> - SD Python dependencies</li>
-                <li><code>.sd-gitignore</code> - SD Git ignore rules</li>
-                <li><code>SD-README.md</code> - SD project documentation</li>
-                <li><code>sd-config.json</code> - SD system configuration</li>
-            </ul>
-            <h3>SD Testing Setup</h3>
-            <p>Configure SD testing framework and run initial SD validation tests.</p>
+            <h2>SD System Configuration and Project Setup</h2>
+            <p>This guide covers setting up the SD development environment and resolving configuration issues.</p>
+            <h3>SD Configuration Problems</h3>
+            <p><strong>Issue:</strong> SD project not starting correctly</p>
+            <p><strong>Solution:</strong> Verify SD configuration files, check SD environment variables, or reset SD project settings.</p>
+            <h3>SD Environment Issues</h3>
+            <p><strong>Issue:</strong> SD development environment not responding</p>
+            <p><strong>Solution:</strong> Restart SD services, clear SD temporary files, or contact SD technical support.</p>
+            <h3>SD Setup Connectivity</h3>
+            <p><strong>Issue:</strong> Cannot connect SD to required services</p>
+            <p><strong>Solution:</strong> Check SD connection settings, restart SD components, or verify SD network configuration.</p>
+            <h3>SD Project Database Issues</h3>
+            <p><strong>Issue:</strong> SD project database connection failing</p>
+            <p><strong>Solution:</strong> Verify SD database credentials, restart SD database service, or contact SD database administrator.</p>
             """
         }
     ],
@@ -205,51 +198,44 @@ documents_by_space = {
             <p>This API enables full account management functionality for personal applications.</p>
             """
         },
-        # PERSONAL Page 4 - Unique to PERSONAL space
+        # PERSONAL Page 4 - Similar to PERSONAL Page 5 (second within-space pair for PERSONAL)
         {
             "title": "Personal Development Environment Setup",
             "content": """
-            <h2>Configuring Your Personal Development Environment</h2>
-            <p>Complete guide for establishing a personal development workspace at home.</p>
-            <h3>Personal Environment Preparation</h3>
-            <ol>
-                <li>Establish personal project workspace</li>
-                <li>Configure personal source control (Git)</li>
-                <li>Create isolated personal environment</li>
-                <li>Install personal project dependencies</li>
-                <li>Set up personal testing framework</li>
-            </ol>
-            <h3>Personal Configuration Files</h3>
-            <p>Set up these important personal configuration files:</p>
-            <ul>
-                <li><code>personal.env</code> - Personal environment configuration</li>
-                <li><code>personal-requirements.txt</code> - Personal package dependencies</li>
-                <li><code>.personal-gitignore</code> - Personal version control exclusions</li>
-                <li><code>PERSONAL-README.md</code> - Personal project documentation</li>
-                <li><code>personal-config.yaml</code> - Personal application settings</li>
-            </ul>
-            <h3>Personal IDE Setup</h3>
-            <p>Configure your preferred IDE with personal themes, extensions, and shortcuts.</p>
+            <h2>Personal Development Environment Configuration</h2>
+            <p>Complete guide for establishing and troubleshooting personal development workspace at home.</p>
+            <h3>Personal Environment Issues</h3>
+            <p><strong>Problem:</strong> Personal development environment not starting correctly</p>
+            <p><strong>Resolution:</strong> Check personal environment variables, restart personal development services, or reset personal configuration files.</p>
+            <h3>Personal Configuration Problems</h3>
+            <p><strong>Problem:</strong> Personal project configuration failing</p>
+            <p><strong>Resolution:</strong> Verify personal settings files, clear personal cache, or reinstall personal dependencies.</p>
+            <h3>Personal IDE Issues</h3>
+            <p><strong>Problem:</strong> Personal IDE not responding or crashing</p>
+            <p><strong>Resolution:</strong> Restart personal IDE, update personal extensions, or reset personal workspace settings.</p>
+            <h3>Personal Project Issues</h3>
+            <p><strong>Problem:</strong> Personal projects not building or running</p>
+            <p><strong>Resolution:</strong> Check personal build configuration, update personal project dependencies, or contact personal development support.</p>
             """
         },
-        # PERSONAL Page 5 - Unique to PERSONAL space
+        # PERSONAL Page 5 - Similar to PERSONAL Page 4 (second within-space pair for PERSONAL)
         {
             "title": "Personal Problem Resolution Guide",
             "content": """
-            <h2>Resolving Personal System Problems</h2>
-            <p>Quick reference for solving common personal technical issues at home.</p>
-            <h3>Personal Authentication Failures</h3>
-            <p><strong>Problem:</strong> Unable to access personal applications</p>
-            <p><strong>Resolution:</strong> Check personal credentials, clear personal browser data, or reset personal passwords.</p>
-            <h3>Personal System Performance</h3>
-            <p><strong>Problem:</strong> Personal applications running slowly</p>
-            <p><strong>Resolution:</strong> Close personal background processes, restart personal system, or upgrade personal hardware.</p>
-            <h3>Personal Network Issues</h3>
-            <p><strong>Problem:</strong> Personal network access problems</p>
-            <p><strong>Resolution:</strong> Check personal router, restart personal network adapter, or contact personal ISP.</p>
-            <h3>Personal Storage Issues</h3>
-            <p><strong>Problem:</strong> Running out of personal storage space</p>
-            <p><strong>Resolution:</strong> Clean personal temporary files, archive personal old projects, or upgrade personal storage.</p>
+            <h2>Personal System Problem Resolution</h2>
+            <p>Quick reference for solving common personal technical and development issues at home.</p>
+            <h3>Personal Development Authentication Failures</h3>
+            <p><strong>Problem:</strong> Unable to access personal development applications</p>
+            <p><strong>Resolution:</strong> Check personal development credentials, clear personal browser data, or reset personal development passwords.</p>
+            <h3>Personal Development Performance</h3>
+            <p><strong>Problem:</strong> Personal development applications running slowly</p>
+            <p><strong>Resolution:</strong> Close personal background processes, restart personal development environment, or upgrade personal hardware.</p>
+            <h3>Personal Development Network Issues</h3>
+            <p><strong>Problem:</strong> Personal development network access problems</p>
+            <p><strong>Resolution:</strong> Check personal development network settings, restart personal network adapter, or contact personal ISP.</p>
+            <h3>Personal Development Storage Issues</h3>
+            <p><strong>Problem:</strong> Running out of personal development storage space</p>
+            <p><strong>Resolution:</strong> Clean personal temporary files, archive personal old development projects, or upgrade personal storage.</p>
             """
         }
     ]
@@ -322,9 +308,81 @@ def main():
     print(f">> Total processed: {total_pages}")
     print("\n>> Similarity Pattern Created:")
     print(">>   - SD Pages 1&2 are similar (within space)")
-    print(">>   - PERSONAL Pages 1&2 are similar (within space)")  
+    print(">>   - SD Pages 4&5 are similar (within space)")  
+    print(">>   - PERSONAL Pages 1&2 are similar (within space)")
+    print(">>   - PERSONAL Pages 4&5 are similar (within space)")
     print(">>   - SD Page 3 is similar to PERSONAL Page 3 (cross-space)")
-    print(">>   - Other pages are unique to their spaces")
+    print(">>   - Expected: 5 duplicate pairs total")
+    
+    # Run duplicate detection if any pages were created
+    if overall_created > 0:
+        print("\n" + "=" * 60)
+        print(">> LOADING DOCUMENTS INTO CHROMADB...")
+        print(">> This will pull the created pages into the vector database...")
+        
+        try:
+            # Import the loading function
+            from confluence.api import load_documents_from_spaces
+            
+            # Wait a moment for Confluence to fully save the pages
+            print(">> Waiting for Confluence pages to be ready...")
+            time.sleep(3)
+            
+            # Load documents from both spaces
+            space_keys = list(SPACES.values())  # ["SD", "~70121465f64cb86d84c92b0bdbc36762f880c"]
+            
+            print(f">> Loading documents from spaces: {space_keys}")
+            load_result = load_documents_from_spaces(space_keys, limit_per_space=50)
+            
+            if load_result:
+                print(f">> ✅ Successfully loaded {load_result} documents into ChromaDB")
+            else:
+                print(">> ❌ No documents were loaded into ChromaDB")
+                
+        except ImportError as e:
+            print(f">> ❌ Could not import document loading: {e}")
+            print(">> You may need to load documents manually from the app")
+        except Exception as e:
+            print(f">> ❌ Error during document loading: {e}")
+            print(">> You may need to load documents manually from the app")
+        
+        print("\n" + "=" * 60)
+        print(">> RUNNING DUPLICATE DETECTION...")
+        print(">> This will analyze documents and detect similarities...")
+        
+        try:
+            # Import the scan function
+            from models.database import scan_for_duplicates
+            
+            # Wait a moment for documents to be fully indexed
+            print(">> Waiting for documents to be indexed...")
+            time.sleep(5)
+            
+            # Run the duplicate scan
+            scan_result = scan_for_duplicates(similarity_threshold=0.65, update_existing=True)
+            
+            if scan_result['success']:
+                print(f">> ✅ Duplicate scan completed successfully!")
+                print(f">>    - {scan_result['pairs_found']} duplicate pairs found")
+                print(f">>    - {scan_result['documents_updated']} documents updated")
+                print(f">>    - Threshold used: {scan_result.get('threshold_used', 0.65)}")
+                
+                if scan_result['pairs_found'] >= 5:
+                    print(">> 🎯 Expected 5 duplicate pairs found - Perfect!")
+                elif scan_result['pairs_found'] > 0:
+                    print(f">> ⚠️  Found {scan_result['pairs_found']} pairs, expected 5")
+                else:
+                    print(">> ❌ No duplicate pairs found - check document content similarity")
+            else:
+                print(f">> ❌ Duplicate scan failed: {scan_result['message']}")
+                
+        except ImportError as e:
+            print(f">> ❌ Could not import duplicate detection: {e}")
+            print(">> You may need to run duplicate detection manually from the app")
+        except Exception as e:
+            print(f">> ❌ Error during duplicate detection: {e}")
+            print(">> You may need to run duplicate detection manually from the app")
+    
     print(">> Seeding complete!")
 
 if __name__ == "__main__":
