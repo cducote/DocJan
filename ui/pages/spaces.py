@@ -7,6 +7,45 @@ import time
 from confluence.api import get_available_spaces, load_documents_from_spaces
 from models.database import get_detected_duplicates
 
+def render_similarity_meter(similarity_score):
+    """Render a visual similarity meter"""
+    similarity_pct = int(similarity_score * 100)
+    
+    # Determine color based on similarity level
+    if similarity_pct >= 90:
+        color = "#ff4444"  # High similarity - red
+        level = "Very High"
+    elif similarity_pct >= 80:
+        color = "#ff8800"  # High similarity - orange
+        level = "High"
+    elif similarity_pct >= 70:
+        color = "#ffaa00"  # Medium-high similarity - yellow-orange
+        level = "Medium-High"
+    elif similarity_pct >= 60:
+        color = "#ffdd00"  # Medium similarity - yellow
+        level = "Medium"
+    else:
+        color = "#88cc00"  # Lower similarity - green
+        level = "Low-Medium"
+    
+    # Create the meter HTML
+    meter_html = f"""
+    <div style="margin-bottom: 8px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+            <span style="font-size: 12px; font-weight: 500; color: #666;">Similarity</span>
+            <span style="font-size: 12px; font-weight: 600; color: {color};">{similarity_pct}%</span>
+        </div>
+        <div style="width: 100%; height: 8px; background-color: #e0e0e0; border-radius: 4px; overflow: hidden;">
+            <div style="width: {similarity_pct}%; height: 100%; background-color: {color}; transition: width 0.3s ease;"></div>
+        </div>
+        <div style="text-align: center; margin-top: 2px;">
+            <span style="font-size: 10px; color: #888; font-weight: 500;">{level}</span>
+        </div>
+    </div>
+    """
+    
+    st.markdown(meter_html, unsafe_allow_html=True)
+
 def render_spaces_page():
     """
     Render the Confluence Spaces management page
@@ -234,8 +273,8 @@ def render_spaces_page():
                                 st.markdown(f"🔗 [View Page]({pair['similar_doc'].metadata['source']})")
                         
                         with col_actions:
-                            similarity_pct = int(pair['similarity_score'] * 100)
-                            st.metric("Similarity", f"{similarity_pct}%")
+                            # Add similarity meter
+                            render_similarity_meter(pair['similarity_score'])
                             
                             # Determine if this is cross-space or within-space
                             if pair['main_space'] != pair['similar_space']:
@@ -297,8 +336,8 @@ def render_spaces_page():
                                 st.session_state.page = 'merge'
                                 st.rerun()
                         with col_action2:
-                            similarity_pct = int(pair['similarity_score'] * 100)
-                            st.metric("Similarity Score", f"{similarity_pct}%")
+                            # Add similarity meter in detailed view too
+                            render_similarity_meter(pair['similarity_score'])
         else:
             if len(st.session_state.selected_spaces) > 1:
                 if duplicate_filter == "Cross-space only":

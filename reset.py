@@ -151,93 +151,83 @@ def reset_chroma_database():
     try:
         print("[*] Resetting Chroma database...")
         
-        # Check if directory exists
+        # Import here to avoid circular import issues
         if os.path.exists(CHROMA_DB_DIR):
             try:
                 # Try to create a ChromaDB instance first to properly close any connections
                 print("[*] Attempting to properly close ChromaDB connections...")
-                embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+                
                 db = Chroma(persist_directory=CHROMA_DB_DIR, embedding_function=embeddings)
                 
-                # Try to delete all data from the database first
+                # Try to delete all documents first
                 try:
                     all_docs = db.get()
-                    if all_docs['ids']:
-                        db.delete(all_docs['ids'])
+                    if all_docs and all_docs.get('ids'):
+                        db.delete(ids=all_docs['ids'])
                         print("[*] Deleted all documents from ChromaDB")
                 except Exception as e:
                     print(f"[!] Could not delete documents from ChromaDB: {e}")
                 
-                # Force garbage collection to release file handles
-                del db
-                del embeddings
-                import gc
-                gc.collect()
-                
-                print("[*] Closed ChromaDB connections")
-                
-                # Small delay to ensure file handles are released
-                import time
-                time.sleep(1)
-                
-            except Exception as e:
-                print(f"[!] Could not properly close ChromaDB: {e}")
-            
-            # Now try to remove the directory
-            try:
-                # On Windows, use more aggressive deletion
-                if os.name == 'nt':  # Windows
-                    print("[*] Using Windows-specific deletion method...")
-                    import subprocess
+                # Close the database connection
+                try:
+                    # Access the underlying client and close it
+                    if hasattr(db, '_client'):
+                        print("[*] Closing ChromaDB client...")
+                        db._client.reset()
+                    print("[*] Closed ChromaDB connections")
                     
-                    # Use Windows rmdir command which can be more aggressive
+                    # Small delay to ensure connections are closed
+                    time.sleep(1)
+                    
+                except Exception as e:
+                    print(f"[!] Could not properly close ChromaDB: {e}")
+                    
+            except Exception as e:
+                print(f"[!] Error with ChromaDB operations: {e}")
+            
+            # Now try to delete the directory
+            try:
+                print(f"[*] Attempting to delete Chroma database directory: {CHROMA_DB_DIR}")
+                if os.name == 'nt':  # Windows
                     try:
                         subprocess.run(['rmdir', '/s', '/q', CHROMA_DB_DIR], 
-                                     shell=True, check=True, capture_output=True)
+                                     check=True, shell=True)
                         print(f"[+] Deleted Chroma database directory using rmdir: {CHROMA_DB_DIR}")
                     except subprocess.CalledProcessError:
-                        # Fallback to Python's shutil
-                        print("[!] rmdir failed, trying Python shutil...")
+                        # Fallback to shutil
                         shutil.rmtree(CHROMA_DB_DIR, ignore_errors=True)
                         print(f"[+] Deleted Chroma database directory using shutil: {CHROMA_DB_DIR}")
-                else:
-                    # Unix/macOS - use standard method
-                    shutil.rmtree(CHROMA_DB_DIR)
+                else:  # Unix/Linux/MacOS
+                    shutil.rmtree(CHROMA_DB_DIR, ignore_errors=True)
                     print(f"[+] Deleted Chroma database directory: {CHROMA_DB_DIR}")
-                
+                    
             except Exception as e:
-                print(f"[-] Error deleting directory: {e}")
-                # Try to at least clear the contents
-                try:
-                    for root, dirs, files in os.walk(CHROMA_DB_DIR, topdown=False):
-                        for file in files:
-                            try:
-                                os.remove(os.path.join(root, file))
-                            except:
-                                pass
-                        for dir in dirs:
-                            try:
-                                os.rmdir(os.path.join(root, dir))
-                            except:
-                                pass
-                    print("[!] Partially cleared ChromaDB directory")
-                except Exception as e2:
-                    print(f"[-] Could not clear directory contents: {e2}")
-                    return False, f"Failed to reset ChromaDB: {str(e)}"
-            
-            # Recreate empty directory
-            os.makedirs(CHROMA_DB_DIR, exist_ok=True)
-            print(f"[+] Created new empty Chroma database directory")
-            
-            return True, "Chroma database reset successfully"
+                print(f"[!] Could not delete Chroma database directory: {e}")
+                return False, f"Failed to delete Chroma database directory: {str(e)}"
         else:
-            print(f"[i] Chroma database directory doesn't exist: {CHROMA_DB_DIR}")
-            return True, "Chroma database directory didn't exist"
-            
+            print("[*] Chroma database directory does not exist, skipping...")
+        
+        return True, "Chroma database reset successfully"
+    
     except Exception as e:
-        error_msg = f"Error resetting Chroma database: {str(e)}"
-        print(f"[-] {error_msg}")
-        return False, error_msg
+        print(f"[!] Unexpected error resetting Chroma database: {e}")
+        return False, f"Failed to reset Chroma database: {str(e)}"
+
+
+def cleanup_merge_operations():
+    """Clean up the merge operations history file"""
+    try:
+        merge_ops_file = "merge_operations.json"
+        if os.path.exists(merge_ops_file):
+            os.remove(merge_ops_file)
+            print(f"[+] Deleted merge operations history file: {merge_ops_file}")
+            return True, "Merge operations history cleared successfully"
+        else:
+            print("[*] Merge operations history file does not exist, skipping...")
+            return True, "No merge operations history to clear"
+    except Exception as e:
+        print(f"[!] Error cleaning up merge operations history: {e}")
+        return False, f"Failed to clean up merge operations: {str(e)}"
 
 def run_seed_script():
     """Run the seed.py script to populate the database"""
@@ -295,6 +285,10 @@ def run_complete_reset(space_keys=None):
     print(f"\n[*] STEP 2: Resetting Chroma database...")
     chroma_success, chroma_message = reset_chroma_database()
     
+    # Step 2.5: Clean up merge operations history
+    print(f"\n[*] STEP 2.5: Cleaning up merge operations history...")
+    merge_cleanup_success, merge_cleanup_message = cleanup_merge_operations()
+    
     # Step 3: Run seed.py (only if pages were deleted successfully)
     seed_success = False
     seed_message = "Skipped due to deletion failures"
@@ -309,6 +303,7 @@ def run_complete_reset(space_keys=None):
     print(f"    [*] Confluence pages deleted: {len(deleted_pages)}")
     print(f"    [*] Confluence deletion failures: {len(failed_deletions)}")
     print(f"    [*] Chroma database reset: {'Success' if chroma_success else 'Failed'}")
+    print(f"    [*] Merge operations cleanup: {'Success' if merge_cleanup_success else 'Failed'}")
     print(f"    [*] Seed script: {'Success' if seed_success else 'Failed'}")
     
     print("=" * 60)
@@ -320,9 +315,11 @@ def run_complete_reset(space_keys=None):
         'failed_deletions': failed_deletions,
         'chroma_reset_success': chroma_success,
         'chroma_reset_message': chroma_message,
+        'merge_cleanup_success': merge_cleanup_success,
+        'merge_cleanup_message': merge_cleanup_message,
         'seed_success': seed_success,
         'seed_message': seed_message,
-        'details': f"Deleted {len(deleted_pages)} pages from {len(space_keys)} spaces, reset database, ran seed script"
+        'details': f"Deleted {len(deleted_pages)} pages from {len(space_keys)} spaces, reset database, cleaned merge history, ran seed script"
     }
 
 if __name__ == "__main__":

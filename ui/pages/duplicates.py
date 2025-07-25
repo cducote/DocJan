@@ -4,6 +4,45 @@ Duplicates page for DocJanitor.
 import streamlit as st
 from utils.helpers import get_detected_duplicates, format_timestamp_to_est
 
+def render_similarity_meter(similarity_score):
+    """Render a visual similarity meter"""
+    similarity_pct = int(similarity_score * 100)
+    
+    # Determine color based on similarity level
+    if similarity_pct >= 90:
+        color = "#ff4444"  # High similarity - red
+        level = "Very High"
+    elif similarity_pct >= 80:
+        color = "#ff8800"  # High similarity - orange
+        level = "High"
+    elif similarity_pct >= 70:
+        color = "#ffaa00"  # Medium-high similarity - yellow-orange
+        level = "Medium-High"
+    elif similarity_pct >= 60:
+        color = "#ffdd00"  # Medium similarity - yellow
+        level = "Medium"
+    else:
+        color = "#88cc00"  # Lower similarity - green
+        level = "Low-Medium"
+    
+    # Create the meter HTML
+    meter_html = f"""
+    <div style="margin-bottom: 8px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+            <span style="font-size: 12px; font-weight: 500; color: #666;">Similarity</span>
+            <span style="font-size: 12px; font-weight: 600; color: {color};">{similarity_pct}%</span>
+        </div>
+        <div style="width: 100%; height: 8px; background-color: #e0e0e0; border-radius: 4px; overflow: hidden;">
+            <div style="width: {similarity_pct}%; height: 100%; background-color: {color}; transition: width 0.3s ease;"></div>
+        </div>
+        <div style="text-align: center; margin-top: 2px;">
+            <span style="font-size: 10px; color: #888; font-weight: 500;">{level}</span>
+        </div>
+    </div>
+    """
+    
+    st.markdown(meter_html, unsafe_allow_html=True)
+
 def render_duplicates_page():
     """
     Render the duplicates page
@@ -73,9 +112,8 @@ def render_duplicates_page():
                         st.markdown(f"🔗 [View Page]({doc2.metadata['source']})")
                 
                 with col_actions:
-                    similarity_pct = int(similarity * 100)
-                    st.markdown(f"<div style='text-align: center; font-size: 14px; color: #666;'>Similarity</div>", unsafe_allow_html=True)
-                    st.markdown(f"<div style='text-align: center; font-size: 20px; font-weight: bold;'>{similarity_pct}%</div>", unsafe_allow_html=True)
+                    # Add similarity meter
+                    render_similarity_meter(similarity)
                     
                     # Determine if this is cross-space or within-space
                     if space1 != space2:
@@ -158,6 +196,5 @@ def render_duplicates_page():
                         st.session_state.page = 'merge'
                         st.rerun()
                 with col_action2:
-                    similarity_pct = int(similarity * 100)
-                    st.markdown(f"<div style='text-align: center; font-size: 14px; color: #666;'>Similarity Score</div>", unsafe_allow_html=True)
-                    st.markdown(f"<div style='text-align: center; font-size: 20px; font-weight: bold;'>{similarity_pct}%</div>", unsafe_allow_html=True)
+                    # Add similarity meter in detailed view too
+                    render_similarity_meter(similarity)
