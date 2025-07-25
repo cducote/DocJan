@@ -1990,7 +1990,10 @@ elif st.session_state.page == 'spaces':
                                 
                                 # Merge button
                                 if st.button(f"🔀 Merge", key=f"merge_{i}"):
-                                    st.session_state.merge_docs = (pair['main_doc'], pair['similar_doc'])
+                                    st.session_state.merge_docs = {
+                                        'main_doc': pair['main_doc'],
+                                        'similar_docs': [pair['similar_doc']]
+                                    }
                                     st.session_state.page = 'merge'
                                     st.rerun()
                             
@@ -2030,7 +2033,10 @@ elif st.session_state.page == 'spaces':
                             col_action1, col_action2 = st.columns(2)
                             with col_action1:
                                 if st.button(f"🔀 Merge Documents", key=f"merge_detail_{i}"):
-                                    st.session_state.merge_docs = (pair['main_doc'], pair['similar_doc'])
+                                    st.session_state.merge_docs = {
+                                        'main_doc': pair['main_doc'],
+                                        'similar_docs': [pair['similar_doc']]
+                                    }
                                     st.session_state.page = 'merge'
                                     st.rerun()
                             with col_action2:
@@ -2325,8 +2331,11 @@ elif st.session_state.page == 'duplicates':
                             st.markdown("📁 **Within-Space**")
                         
                         # Merge button
-                        if st.button(f"� Merge", key=f"merge_{i}"):
-                            st.session_state.merge_docs = (pair['main_doc'], pair['similar_doc'])
+                        if st.button(f"🔀 Merge", key=f"merge_{i}"):
+                            st.session_state.merge_docs = {
+                                'main_doc': pair['main_doc'],
+                                'similar_docs': [pair['similar_doc']]
+                            }
                             st.session_state.page = 'merge'
                             st.rerun()
                     
@@ -2365,8 +2374,11 @@ elif st.session_state.page == 'duplicates':
                     st.markdown("**Actions:**")
                     col_action1, col_action2 = st.columns(2)
                     with col_action1:
-                        if st.button(f"� Merge Documents", key=f"merge_detail_{i}"):
-                            st.session_state.merge_docs = (pair['main_doc'], pair['similar_doc'])
+                        if st.button(f"🔀 Merge Documents", key=f"merge_detail_{i}"):
+                            st.session_state.merge_docs = {
+                                'main_doc': pair['main_doc'],
+                                'similar_docs': [pair['similar_doc']]
+                            }
                             st.session_state.page = 'merge'
                             st.rerun()
                     with col_action2:
