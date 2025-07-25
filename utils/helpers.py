@@ -142,15 +142,41 @@ def get_detected_duplicates(space_keys=None):
                 
                 processed_pairs.add(pair_key)
                 
-                # Create document objects
+                # Create document objects with enhanced metadata
+                enhanced_metadata_1 = metadata.copy()
+                enhanced_metadata_2 = all_docs['metadatas'][similar_idx].copy()
+                
+                # Extract space keys from URLs if not already present
+                space_key_1 = enhanced_metadata_1.get('space_key', '')
+                if not space_key_1:
+                    source_url_1 = enhanced_metadata_1.get('source', '')
+                    space_key_1 = extract_space_key_from_url(source_url_1) or 'Unknown'
+                    enhanced_metadata_1['space_key'] = space_key_1
+                
+                space_key_2 = enhanced_metadata_2.get('space_key', '')
+                if not space_key_2:
+                    source_url_2 = enhanced_metadata_2.get('source', '')
+                    space_key_2 = extract_space_key_from_url(source_url_2) or 'Unknown'
+                    enhanced_metadata_2['space_key'] = space_key_2
+                
+                # Add space names to metadata
+                try:
+                    from models.database import get_space_name_from_key
+                    enhanced_metadata_1['space_name'] = get_space_name_from_key(space_key_1)
+                    enhanced_metadata_2['space_name'] = get_space_name_from_key(space_key_2)
+                except ImportError:
+                    # Fallback if import fails
+                    enhanced_metadata_1['space_name'] = space_key_1 or 'Unknown'
+                    enhanced_metadata_2['space_name'] = space_key_2 or 'Unknown'
+                
                 doc1 = Document(
                     page_content=all_docs['documents'][i],
-                    metadata=metadata
+                    metadata=enhanced_metadata_1
                 )
                 
                 doc2 = Document(
                     page_content=all_docs['documents'][similar_idx],
-                    metadata=all_docs['metadatas'][similar_idx]
+                    metadata=enhanced_metadata_2
                 )
                 
                 # Calculate actual similarity using embeddings
