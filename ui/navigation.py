@@ -39,6 +39,10 @@ def render_sidebar():
         if st.button("🏠 Dashboard", use_container_width=True, key="nav_dashboard"):
             st.session_state.page = 'dashboard'
             st.rerun()
+
+        if st.button("🌐 Spaces", use_container_width=True, key="nav_spaces"):
+            st.session_state.page = 'spaces'
+            st.rerun()
             
         if st.button("🔍 Search", use_container_width=True, key="nav_search"):
             st.session_state.page = 'search'
@@ -55,38 +59,6 @@ def render_sidebar():
         if st.button("⚙️ Settings", use_container_width=True, key="nav_settings"):
             st.session_state.page = 'settings'
             st.rerun()
-            
-        # Space selection
-        st.markdown("---")
-        st.markdown("### Filter by Space")
-        
-        if st.session_state.available_spaces is None:
-            # Load spaces if not already loaded
-            from confluence.api import get_available_spaces
-            st.session_state.available_spaces = get_available_spaces()
-        
-        # Show space selector
-        if st.session_state.available_spaces:
-            space_options = [space['key'] for space in st.session_state.available_spaces]
-            space_labels = [f"{space['name']} ({space['key']})" for space in st.session_state.available_spaces]
-            
-            selected_indices = []
-            for i, space_key in enumerate(space_options):
-                if space_key in st.session_state.selected_spaces:
-                    selected_indices.append(i)
-            
-            selected_spaces = st.multiselect(
-                "Select spaces:",
-                options=space_options,
-                default=st.session_state.selected_spaces,
-                format_func=lambda x: next((s['name'] for s in st.session_state.available_spaces if s['key'] == x), x)
-            )
-            
-            if selected_spaces != st.session_state.selected_spaces:
-                st.session_state.selected_spaces = selected_spaces
-                st.rerun()  # Refresh with new space filter
-        else:
-            st.info("No spaces available or not authenticated")
 
 
 def route_to_page():
@@ -97,6 +69,7 @@ def route_to_page():
     from ui.pages.dashboard import render_dashboard
     from ui.pages.search import render_search_page
     from ui.pages.duplicates import render_duplicates_page
+    from ui.pages.spaces import render_spaces_page
     from ui.pages.merge_history import render_merge_history
     from ui.pages.settings import render_settings
     from ui.pages.merge import render_merge_page
@@ -108,6 +81,8 @@ def route_to_page():
         render_search_page()
     elif st.session_state.page == 'duplicates':
         render_duplicates_page()
+    elif st.session_state.page == 'spaces':
+        render_spaces_page()
     elif st.session_state.page == 'merge_history':
         render_merge_history()
     elif st.session_state.page == 'settings':

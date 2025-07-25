@@ -173,6 +173,94 @@ def render_settings():
             st.success("Session state reset!")
             st.rerun()
     
+    # Dangerous Operations
+    st.markdown("---")
+    st.markdown("## ⚠️ Dangerous Operations")
+    st.warning("These operations are irreversible and will affect your Confluence space and database.")
+    
+    # Initialize reset confirmation state
+    if 'reset_confirmation' not in st.session_state:
+        st.session_state.reset_confirmation = False
+    
+    # Reset confirmation workflow
+    if not st.session_state.reset_confirmation:
+        if st.button("🔥 Reset Everything", use_container_width=True, help="Delete ALL pages and reset database", key="settings_reset_everything"):
+            st.session_state.reset_confirmation = True
+            st.rerun()
+    else:
+        st.warning("⚠️ **WARNING**: This will permanently delete ALL pages in the Confluence space and reset the database!")
+        st.markdown("This action is **irreversible**. Are you sure?")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("✅ Yes, Reset", use_container_width=True, type="primary", key="settings_confirm_reset"):
+                # Run the reset
+                with st.spinner("🔥 Resetting everything..."):
+                    try:
+                        # Import and run the reset function with error handling
+                        import subprocess
+                        import sys
+                        import os
+                        
+                        # Run reset.py as a subprocess to avoid encoding issues
+                        result = subprocess.run(
+                            [sys.executable, "reset.py"],
+                            cwd=os.getcwd(),
+                            capture_output=True,
+                            text=True,
+                            input="SD\nyes\n",  # Auto-confirm with default space
+                            timeout=300  # 5 minute timeout
+                        )
+                        
+                        if result.returncode == 0:
+                            st.session_state.reset_result = {
+                                'success': True,
+                                'message': 'Reset completed successfully!',
+                                'details': result.stdout
+                            }
+                        else:
+                            st.session_state.reset_result = {
+                                'success': False,
+                                'error': f"Reset process failed with return code {result.returncode}",
+                                'details': result.stderr
+                            }
+                        
+                        st.session_state.reset_confirmation = False
+                        st.rerun()
+                        
+                    except subprocess.TimeoutExpired:
+                        st.error("Reset failed: Operation timed out after 5 minutes")
+                        st.session_state.reset_confirmation = False
+                    except Exception as e:
+                        st.error(f"Reset failed: {str(e)}")
+                        st.session_state.reset_confirmation = False
+        
+        with col2:
+            if st.button("❌ Cancel", use_container_width=True, key="settings_cancel_reset"):
+                st.session_state.reset_confirmation = False
+                st.rerun()
+    
+    # Show reset results if available
+    if 'reset_result' in st.session_state and st.session_state.reset_result:
+        st.markdown("### Reset Results")
+        if st.session_state.reset_result.get('success'):
+            st.success("✅ Reset completed successfully!")
+            if 'details' in st.session_state.reset_result:
+                with st.expander("View Details"):
+                    st.text(st.session_state.reset_result['details'])
+        else:
+            st.error("❌ Reset failed!")
+            if 'error' in st.session_state.reset_result:
+                st.error(st.session_state.reset_result['error'])
+            if 'details' in st.session_state.reset_result:
+                with st.expander("View Error Details"):
+                    st.text(st.session_state.reset_result['details'])
+        
+        if st.button("Clear Results", key="settings_clear_reset_results"):
+            if 'reset_result' in st.session_state:
+                del st.session_state.reset_result
+            st.rerun()
+    
     # Navigation
     st.markdown("---")
     if st.button("← Back to Dashboard", key="settings_back_to_dashboard"):

@@ -1,0 +1,63 @@
+[
+  {
+    "id": "fdc1bd6f-e580-4086-a54c-919bbf08923d",
+    "kept_page_id": "5112021",
+    "deleted_page_id": "5243034",
+    "kept_title": "Software Installation Guide - Personal",
+    "deleted_title": "Application Installation Manual - Personal",
+    "timestamp": "2025-07-25T02:06:13.552755Z",
+    "status": "completed",
+    "merged_content": "<h1>Personal Software Installation Guide</h1>\n\n<p>This guide provides a comprehensive overview of installing essential personal software applications. Follow the steps below to ensure a smooth installation process.</p>\n\n<h2>Prerequisites</h2>\n<ul>\n    <li><strong>Operating System:</strong> Windows 10 or later</li>\n    <li><strong>Access Rights:</strong> Administrator privileges on personal machine</li>\n    <li><strong>Internet:</strong> Stable internet connection</li>\n    <li><strong>Licenses:</strong> Personal license keys where required</li>\n</ul>\n\n<h2>Installation Steps</h2>\n<ol>\n    <li>Download the installer from the official website or source.</li>\n    <li>Run the installer as administrator.</li>\n    <li>Follow the setup wizard carefully.</li>\n    <li>Enter personal license information if prompted.</li>\n    <li>Configure personal settings as needed.</li>\n    <li>Restart your computer when prompted.</li>\n</ol>\n\n<h2>Troubleshooting</h2>\n<p>If you encounter any issues during installation, consult the personal software documentation or community forums for assistance. For technical difficulties, check online documentation or user communities.</p>\n\n<p><em>Merged by DocJanitor</em></p>",
+    "kept_url": "https://chrisducote89.atlassian.net/wiki/spaces/~70121465f64cb86d84c92b0bdbc36762f880c/pages/5112021/Software+Installation+Guide+-+Personal",
+    "deleted_url": "https://chrisducote89.atlassian.net/wiki/spaces/~70121465f64cb86d84c92b0bdbc36762f880c/pages/5243034/Application+Installation+Manual+-+Personal"
+  },
+  {
+    "id": "7055ce2f-6902-43b0-8608-8efc40df0707",
+    "kept_page_id": "5144840",
+    "deleted_page_id": "5144861",
+    "kept_title": "Password Reset Instructions - SD",
+    "deleted_title": "Account Password Recovery - SD",
+    "timestamp": "2025-07-25T02:09:21.878537Z",
+    "status": "completed",
+    "merged_content": "<h1>Password Reset and Recovery Instructions - SD</h1>\n\n<p>Follow these steps to reset or recover your password in the SD system:</p>\n\n<h2>Steps to Reset Your Password</h2>\n<ol>\n    <li>Go to the login page.</li>\n    <li>Click the <strong>\"Forgot Password\"</strong> link.</li>\n    <li>Enter your registered email address.</li>\n    <li>Check your email for reset instructions.</li>\n    <li>Click the reset link in the email.</li>\n    <li>Create a new strong password.</li>\n</ol>\n\n<h2>Password Requirements</h2>\n<ul>\n    <li>Password must be at least 8 characters long.</li>\n    <li>Include uppercase and lowercase letters.</li>\n    <li>Include numbers and special characters.</li>\n</ul>\n\n<p>This procedure applies to all SD system accounts and ensures secure access recovery.</p>\n\n<p><em>Merged by DocJanitor</em></p>",
+    "kept_url": "https://chrisducote89.atlassian.net/wiki/spaces/SD/pages/5144840/Password+Reset+Instructions+-+SD",
+    "deleted_url": "https://chrisducote89.atlassian.net/wiki/spaces/SD/pages/5144861/Account+Password+Recovery+-+SD"
+  },
+  {
+    "id": "ee3452a4-115b-478e-bcee-e50b4e444d17",
+    "kept_page_id": "5144840",
+    "deleted_page_id": "5144861",
+    "kept_title": "Password Reset Instructions - SD",
+    "deleted_title": "Account Password Recovery - SD",
+    "timestamp": "2025-07-25T02:09:26.979172Z",
+    "status": "completed",
+    "merged_content": "<h1>Password Reset and Recovery Instructions - SD</h1>\n\n<p>Follow these steps to reset or recover your password in the SD system:</p>\n\n<h2>Steps to Reset Your Password</h2>\n<ol>\n    <li>Go to the login page.</li>\n    <li>Click the <strong>\"Forgot Password\"</strong> link.</li>\n    <li>Enter your registered email address.</li>\n    <li>Check your email for reset instructions.</li>\n    <li>Click the reset link in the email.</li>\n    <li>Create a new strong password.</li>\n</ol>\n\n<h2>Password Requirements</h2>\n<ul>\n    <li>Password must be at least 8 characters long.</li>\n    <li>Include uppercase and lowercase letters.</li>\n    <li>Include numbers and special characters.</li>\n</ul>\n\n<p>This procedure applies to all SD system accounts and ensures secure access recovery.</p>\n\n<p><em>Merged by DocJanitor</em></p>",
+    "kept_url": "https://chrisducote89.atlassian.net/wiki/spaces/SD/pages/5144840/Password+Reset+Instructions+-+SD",
+    "deleted_url": "https://chrisducote89.atlassian.net/wiki/spaces/SD/pages/5144861/Account+Password+Recovery+-+SD"
+  },
+  {
+    "id": "e05c3b20-9d25-45e0-8869-d68589dc65d6",
+    "kept_page_id": "5144840",
+    "deleted_page_id": "5144861",
+    "kept_title": "Password Reset Instructions - SD",
+    "deleted_title": "Account Password Recovery - SD",
+    "timestamp": "2025-07-25T02:15:50.103127Z",
+    "status": "completed",
+    "merged_content": "<h1>Password Reset and Recovery Instructions - SD</h1>\n\n<p>If you've forgotten your password for the SD system or need to reset it, follow these steps to securely recover access to your account:</p>\n\n<h2>Steps to Reset Your Password</h2>\n\n<ol>\n    <li>Go to the main login page of the SD system.</li>\n    <li>Click on the <strong>\"Forgot Password\"</strong> link.</li>\n    <li>Enter your registered email address.</li>\n    <li>Check your email inbox for reset instructions.</li>\n    <li>Click the secure reset link provided in the email.</li>\n    <li>Create a new strong password.</li>\n</ol>\n\n<h2>Password Requirements</h2>\n\n<ul>\n    <li>Password must be at least 8 characters long.</li>\n    <li>Include uppercase and lowercase letters.</li>\n    <li>Incorporate numbers and special characters.</li>\n</ul>\n\n<p>This procedure applies to all SD system accounts and ensures secure access recovery. It is designed to maintain system security by enforcing strong password practices.</p>\n\n<p><em>Merged by DocJanitor</em></p>",
+    "kept_url": "https://chrisducote89.atlassian.net/wiki/spaces/SD/pages/5144840/Password+Reset+Instructions+-+SD",
+    "deleted_url": "https://chrisducote89.atlassian.net/wiki/spaces/SD/pages/5144861/Account+Password+Recovery+-+SD"
+  },
+  {
+    "id": "2b2d94cc-10dd-4b6c-9d98-049255416624",
+    "kept_page_id": "5144840",
+    "deleted_page_id": "5144861",
+    "kept_title": "Password Reset Instructions - SD",
+    "deleted_title": "Account Password Recovery - SD",
+    "timestamp": "2025-07-25T02:18:10.184797Z",
+    "status": "undone",
+    "merged_content": "<h1>Password Reset and Recovery Instructions - SD</h1>\n\n<p>If you need to reset or recover your password for the SD system, follow the steps outlined below. This process ensures secure access recovery for all SD system accounts.</p>\n\n<h2>Steps to Reset Your Password</h2>\n\n<ol>\n    <li>Go to the login page of the SD system.</li>\n    <li>Click on the <strong>\"Forgot Password\"</strong> link.</li>\n    <li>Enter your registered email address.</li>\n    <li>Check your email inbox for reset instructions.</li>\n    <li>Click the reset link provided in the email.</li>\n    <li>Create a new strong password.</li>\n</ol>\n\n<h3>Password Requirements</h3>\n\n<ul>\n    <li>Password must be at least 8 characters long.</li>\n    <li>Include uppercase and lowercase letters.</li>\n    <li>Include numbers and special characters.</li>\n</ul>\n\n<p><strong>Security Tip:</strong> Use a combination of letters, numbers, and symbols to enhance password security.</p>\n\n<p><em>Merged by DocJanitor</em></p>",
+    "kept_url": "https://chrisducote89.atlassian.net/wiki/spaces/SD/pages/5144840/Password+Reset+Instructions+-+SD",
+    "deleted_url": "https://chrisducote89.atlassian.net/wiki/spaces/SD/pages/5144861/Account+Password+Recovery+-+SD",
+    "undo_timestamp": "2025-07-25T02:27:17.137463Z"
+  }
+]

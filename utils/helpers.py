@@ -153,8 +153,24 @@ def get_detected_duplicates(space_keys=None):
                     metadata=all_docs['metadatas'][similar_idx]
                 )
                 
-                # Calculate similarity (placeholder - you might want to implement actual calculation)
-                similarity = 0.75  # Default similarity score
+                # Calculate actual similarity using embeddings
+                try:
+                    from models.database import embeddings
+                    import numpy as np
+                    from sklearn.metrics.pairwise import cosine_similarity
+                    
+                    # Generate embeddings for both documents
+                    embedding1 = embeddings.embed_query(doc1.page_content)
+                    embedding2 = embeddings.embed_query(doc2.page_content)
+                    
+                    # Calculate cosine similarity
+                    similarity_matrix = cosine_similarity([embedding1], [embedding2])
+                    similarity = float(similarity_matrix[0][0])
+                    
+                except Exception as e:
+                    print(f"Warning: Could not calculate similarity for pair {doc1_id}-{doc2_id}: {e}")
+                    # Fall back to a reasonable default based on the fact they were detected as similar
+                    similarity = 0.75  # Default similarity score
                 
                 duplicate_pairs.append({
                     'doc1': doc1,

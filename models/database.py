@@ -103,11 +103,11 @@ def store_merge_operation(kept_page_id, deleted_page_id, merged_content, kept_ti
         with open(merge_file, 'w') as f:
             json.dump(merge_operations, f, indent=2)
         
-        return merge_record
+        return True, f"Merge operation stored with ID: {merge_id}"
     
     except Exception as e:
         print(f"Error storing merge operation: {str(e)}")
-        return None
+        return False, f"Failed to store merge operation: {str(e)}"
 
 
 def get_recent_merges(limit=20):
@@ -406,3 +406,262 @@ def cleanup_duplicate_database_entries():
         
     except Exception as e:
         return False, f"Error cleaning up duplicate entries: {str(e)}"
+
+
+def extract_space_key_from_url(url):
+    """Extract space key from Confluence URL"""
+    if not url:
+        return None
+    
+    try:
+        # Method 1: /spaces/SPACEKEY/ format
+        if '/spaces/' in url:
+            parts = url.split('/spaces/')
+            if len(parts) > 1:
+                space_part = parts[1].split('/')[0]
+                return space_part
+        
+        # Method 2: spaceKey parameter
+        if 'spaceKey=' in url:
+            space_key = url.split('spaceKey=')[1].split('&')[0]
+            return space_key
+        
+        # Method 3: /display/SPACEKEY/ format
+        if '/display/' in url:
+            parts = url.split('/display/')
+            if len(parts) > 1:
+                space_part = parts[1].split('/')[0]
+                return space_part
+        
+        return None
+        
+    except Exception as e:
+        print(f"DEBUG: Error extracting space key from URL {url}: {e}")
+        return None
+
+
+def get_space_name_from_key(space_key):
+    """Convert a space key to a space name using available spaces data"""
+    if not space_key or space_key == 'Unknown':
+        return 'Unknown Space'
+    
+    # Import here to avoid circular imports
+    import streamlit as st
+    
+    # Get available spaces from session state
+    available_spaces = st.session_state.get('available_spaces', [])
+    
+    if available_spaces:
+        for space in available_spaces:
+            if space['key'] == space_key:
+                return space['name']
+    
+    # If space not found in available spaces, return the key as fallback
+    return space_key
+
+
+def get_detected_duplicates(space_filter=None, cross_space_only=False, within_space_only=False):
+    """Get all document pairs that have been detected as duplicates, optionally filtered by spaces
+    
+    Args:
+        space_filter (list): List of space keys to filter by. If None, returns all duplicates.
+        cross_space_only (bool): If True, only return cross-space duplicates
+        within_space_only (bool): If True, only return within-space duplicates
+    """
+    try:
+        from langchain.schema import Document
+        
+        # Get all documents from the database
+        all_docs = db.get()
+        
+        if not all_docs['documents']:
+            return []
+        
+        duplicate_pairs = []
+        processed_docs = set()
+        
+        # Create a mapping from doc_id to index for faster lookup
+        doc_id_to_index = {}
+        for i, metadata in enumerate(all_docs['metadatas']):
+            doc_id = metadata.get('doc_id', '')
+            if doc_id:
+                doc_id_to_index[doc_id] = i
+        
+        # Process each document
+        for i, metadata in enumerate(all_docs['metadatas']):
+            doc_id = metadata.get('doc_id', '')
+            
+            if doc_id in processed_docs:
+                continue
+            
+            content = all_docs['documents'][i]
+            
+            # Extract space key for filtering
+            doc_space_key = extract_space_key_from_url(metadata.get('source', ''))
+            
+            # Apply space filter if provided
+            if space_filter and doc_space_key not in space_filter:
+                continue
+            
+            # Check if this document has similar documents
+            similar_docs_str = metadata.get('similar_docs', '')
+            if not similar_docs_str:
+                continue
+                
+            similar_doc_ids = [id.strip() for id in similar_docs_str.split(',') if id.strip()]
+            
+            # Find the similar documents
+            for similar_doc_id in similar_doc_ids:
+                if similar_doc_id in processed_docs:
+                    continue
+                    
+                # Find the similar document using the doc_id mapping
+                similar_doc_index = doc_id_to_index.get(similar_doc_id)
+                
+                if similar_doc_index is not None:
+                    similar_metadata = all_docs['metadatas'][similar_doc_index]
+                    
+                    # Extract space key for the similar document
+                    similar_space_key = extract_space_key_from_url(similar_metadata.get('source', ''))
+                    
+                    # Apply space filter for similar document if provided
+                    if space_filter and similar_space_key not in space_filter:
+                        continue
+                    
+                    # Apply cross-space filtering logic
+                    if cross_space_only:
+                        # Only include if documents are from different spaces
+                        if doc_space_key == similar_space_key:
+                            continue
+                    elif within_space_only:
+                        # Only include if documents are from the same space
+                        if doc_space_key != similar_space_key:
+                            continue
+                    # If neither filter is set, include all duplicates
+                    
+                    # Create document objects
+                    main_doc = Document(
+                        page_content=content,
+                        metadata=metadata
+                    )
+                    
+                    similar_doc = Document(
+                        page_content=all_docs['documents'][similar_doc_index],
+                        metadata=similar_metadata
+                    )
+                    
+                    # Calculate similarity score (you can enhance this)
+                    similarity_score = 0.8  # Placeholder - you could calculate actual similarity
+                    
+                    duplicate_pairs.append({
+                        'main_doc': main_doc,
+                        'similar_doc': similar_doc,
+                        'similarity_score': similarity_score,
+                        'main_title': metadata.get('title', 'Untitled'),
+                        'similar_title': similar_metadata.get('title', 'Untitled'),
+                        'main_space': doc_space_key or 'Unknown',
+                        'similar_space': similar_space_key or 'Unknown',
+                        'main_space_name': get_space_name_from_key(doc_space_key),
+                        'similar_space_name': get_space_name_from_key(similar_space_key)
+                    })
+                    
+                    processed_docs.add(similar_doc_id)
+            
+            processed_docs.add(doc_id)
+        
+        return duplicate_pairs
+    
+    except Exception as e:
+        import streamlit as st
+        st.error(f"Error getting detected duplicates: {str(e)}")
+        return []
+
+
+def update_chroma_after_merge(main_doc, similar_doc, keep_main=True):
+    """Update Chroma database after successful merge to remove duplicate relationships"""
+    try:
+        from utils.helpers import Document
+        
+        # Get the doc_id of the document we're keeping and the one we're removing
+        main_doc_id = main_doc.metadata.get('doc_id', '')
+        similar_doc_id = similar_doc.metadata.get('doc_id', '')
+        
+        if not main_doc_id or not similar_doc_id:
+            print(f"DEBUG: Missing doc_ids for Chroma update. Main: {main_doc_id}, Similar: {similar_doc_id}")
+            return False, "Missing document IDs for Chroma update"
+        
+        # Determine which document to keep and which to remove
+        if keep_main:
+            keep_doc_id = main_doc_id
+            remove_doc_id = similar_doc_id
+        else:
+            keep_doc_id = similar_doc_id
+            remove_doc_id = main_doc_id
+        
+        # Get all documents from Chroma
+        all_docs = db.get()
+        
+        if not all_docs['documents']:
+            return False, "No documents found in Chroma database"
+        
+        # Find and update documents that reference the removed document
+        updated_count = 0
+        documents_to_update = []
+        
+        for i, metadata in enumerate(all_docs['metadatas']):
+            doc_id = metadata.get('doc_id', '')
+            similar_docs_str = metadata.get('similar_docs', '')
+            
+            if similar_docs_str and remove_doc_id in similar_docs_str:
+                # Remove the deleted document from similar_docs list
+                similar_doc_ids = [id.strip() for id in similar_docs_str.split(',') if id.strip()]
+                similar_doc_ids = [id for id in similar_doc_ids if id != remove_doc_id]
+                
+                # Update the metadata
+                updated_metadata = metadata.copy()
+                updated_metadata['similar_docs'] = ','.join(similar_doc_ids) if similar_doc_ids else ''
+                
+                # Store the update information
+                documents_to_update.append({
+                    'id': all_docs['ids'][i],
+                    'document': all_docs['documents'][i],
+                    'metadata': updated_metadata
+                })
+                updated_count += 1
+                print(f"DEBUG: Prepared update for document {doc_id} to remove reference to {remove_doc_id}")
+        
+        # Perform batch update using add (which overwrites existing documents with same IDs)
+        if documents_to_update:
+            try:
+                # First delete the existing documents
+                ids_to_update = [item['id'] for item in documents_to_update]
+                db.delete(ids_to_update)
+                
+                # Then add them back with updated metadata
+                db.add_documents(
+                    documents=[Document(page_content=item['document'], metadata=item['metadata']) 
+                             for item in documents_to_update],
+                    ids=ids_to_update
+                )
+                print(f"DEBUG: Successfully updated {len(documents_to_update)} documents via delete+add")
+            except Exception as e:
+                print(f"DEBUG: Error during batch update: {e}")
+                return False, f"Error updating documents: {str(e)}"
+        
+        # Remove the deleted document from Chroma entirely
+        # Find the Chroma ID of the document to remove
+        remove_chroma_id = None
+        for i, metadata in enumerate(all_docs['metadatas']):
+            if metadata.get('doc_id', '') == remove_doc_id:
+                remove_chroma_id = all_docs['ids'][i]
+                break
+        
+        if remove_chroma_id:
+            db.delete([remove_chroma_id])
+            print(f"DEBUG: Removed document {remove_doc_id} from Chroma database")
+        
+        return True, f"Updated {updated_count} documents and removed merged document from database"
+        
+    except Exception as e:
+        print(f"DEBUG: Error updating Chroma after merge: {e}")
+        return False, f"Error updating Chroma database: {str(e)}"

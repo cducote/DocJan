@@ -10,14 +10,18 @@ def render_merge_page():
     """
     Render the merge page for combining two documents
     """
-    st.title("🔀 Merge Documents")
+    st.title("🔀 Document Merge Tool")
+    
+    # Back button
+    col1, col2 = st.columns([1, 4])
+    with col1:
+        if st.button("← Back", use_container_width=True):
+            st.session_state.page = 'duplicates'
+            st.rerun()
     
     # Check if we have documents to merge
     if not st.session_state.merge_docs:
         st.warning("No documents selected for merging.")
-        if st.button("← Back to Duplicates", key="merge_no_docs_back"):
-            st.session_state.page = 'duplicates'
-            st.rerun()
         return
     
     merge_docs = st.session_state.merge_docs
@@ -28,204 +32,157 @@ def render_merge_page():
     if not main_doc or not similar_doc:
         st.error("Invalid merge documents data.")
         return
+        
+    st.markdown("### Compare and merge similar documents")
+    st.markdown("---")
     
-    # Display document comparison
-    st.markdown(f"### Merging Documents (Similarity: {similarity:.0%})")
-    
+    # Side-by-side comparison
     col1, col2 = st.columns(2)
     
-    # Document 1
     with col1:
-        with st.container(border=True):
-            st.markdown("#### Document A (Primary)")
-            title1 = main_doc.metadata.get("title", "Untitled")
-            url1 = main_doc.metadata.get("source", "")
-            if url1:
-                st.markdown(f"**Title:** [{title1}]({url1})")
-            else:
-                st.markdown(f"**Title:** {title1}")
-            
-            # Metadata
-            space1 = main_doc.metadata.get("space_key", "Unknown")
-            space_name1 = main_doc.metadata.get("space_name", space1)
-            st.markdown(f"**Space:** {space_name1}")
-            
-            updated1 = main_doc.metadata.get("last_updated", "")
-            if updated1:
-                st.markdown(f"**Updated:** {format_timestamp_to_est(updated1)}")
-            
-            # Content preview
-            with st.expander("View Full Content", expanded=False):
-                st.markdown(main_doc.page_content)
+        st.markdown("### 📄 Primary Document")
+        main_title = main_doc.metadata.get("title", "Untitled Page")
+        main_content = main_doc.page_content.strip()
+        
+        st.markdown(f"**Title:** {main_title}")
+        st.markdown("**Content:**")
+        st.text_area("Primary Document Content", main_content, height=400, disabled=True, key="main_content")
     
-    # Document 2
     with col2:
-        with st.container(border=True):
-            st.markdown("#### Document B (Similar)")
-            title2 = similar_doc.metadata.get("title", "Untitled")
-            url2 = similar_doc.metadata.get("source", "")
-            if url2:
-                st.markdown(f"**Title:** [{title2}]({url2})")
-            else:
-                st.markdown(f"**Title:** {title2}")
-            
-            # Metadata
-            space2 = similar_doc.metadata.get("space_key", "Unknown")
-            space_name2 = similar_doc.metadata.get("space_name", space2)
-            st.markdown(f"**Space:** {space_name2}")
-            
-            updated2 = similar_doc.metadata.get("last_updated", "")
-            if updated2:
-                st.markdown(f"**Updated:** {format_timestamp_to_est(updated2)}")
-            
-            # Content preview
-            with st.expander("View Full Content", expanded=False):
-                st.markdown(similar_doc.page_content)
+        st.markdown("### 🔗 Similar Document")
+        similar_title = similar_doc.metadata.get("title", "Untitled Page")
+        similar_content = similar_doc.page_content.strip()
+        
+        st.markdown(f"**Title:** {similar_title}")
+        st.markdown("**Content:**")
+        st.text_area("Similar Document Content", similar_content, height=400, disabled=True, key="similar_content")
     
-    # Merge options
+    # Merge controls
     st.markdown("---")
-    st.markdown("### Merge Options")
+    st.markdown("### 🔧 Merge Options")
     
-    col1, col2 = st.columns([1, 1])
+    col1, col2, col3 = st.columns(3)
     
     with col1:
-        st.markdown("**Which document should be kept?**")
-        keep_main = st.radio(
-            "Keep document",
-            options=[True, False],
-            format_func=lambda x: f"Document A: {title1}" if x else f"Document B: {title2}",
-            key="keep_main_doc"
-        )
+        if st.button("🚀 Auto-Merge with AI", use_container_width=True):
+            with st.spinner("Merging documents with AI..."):
+                merged_result = merge_documents_with_ai(main_doc, similar_doc)
+                st.session_state.merged_content = merged_result
+                st.success("Documents merged successfully!")
+                st.rerun()
     
     with col2:
-        st.markdown("**Merge method**")
-        merge_method = st.radio(
-            "Method",
-            options=["ai", "manual"],
-            format_func=lambda x: "AI-assisted merge" if x == "ai" else "Manual editing",
-            key="merge_method"
-        )
-    
-    # Generate merged content
-    if merge_method == "ai":
-        if st.button("🤖 Generate AI Merge", use_container_width=True, key="merge_generate_ai"):
-            with st.spinner("Generating merged content using AI..."):
-                merged_content = merge_documents_with_ai(main_doc, similar_doc)
-                st.session_state.merged_content = merged_content
-                st.session_state.manual_edit_mode = False
-    
-    # Manual editing option
-    if merge_method == "manual" or st.session_state.get("manual_edit_mode", False):
-        st.markdown("### Manual Content Editing")
-        if st.button("✏️ Enable Manual Editing", key="merge_enable_manual"):
+        if st.button("✏️ Manual Edit", use_container_width=True):
             st.session_state.manual_edit_mode = True
-            # Start with content from the document we're keeping
-            if keep_main:
-                st.session_state.merged_content = main_doc.page_content
+            if not st.session_state.get("merged_content"):
+                # Start with the primary document content
+                st.session_state.merged_content = main_content
+            st.rerun()
+    
+    with col3:
+        if st.button("💾 Save Merged Document", use_container_width=True):
+            if st.session_state.get("merged_content"):
+                st.success("Merged document saved!")
             else:
-                st.session_state.merged_content = similar_doc.page_content
+                st.warning("No merged content to save. Please merge documents first.")
     
-    # Display and edit merged content
-    if st.session_state.get("merged_content"):
-        st.markdown("### Merged Content")
-        
-        if st.session_state.get("manual_edit_mode", False):
-            # Editable version
-            edited_content = st.text_area(
-                "Edit the merged content:",
-                value=st.session_state.merged_content,
-                height=400,
-                key="content_editor"
-            )
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("💾 Save Changes", key="merge_save_changes"):
-                    st.session_state.merged_content = edited_content
-                    st.success("Changes saved!")
-            
-            with col2:
-                if st.button("👁️ Preview Mode", key="merge_preview_mode"):
-                    st.session_state.manual_edit_mode = False
-                    st.rerun()
-        else:
-            # Preview version
-            with st.container(border=True):
-                st.markdown(st.session_state.merged_content)
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("✏️ Edit Content", key="merge_edit_content"):
-                    st.session_state.manual_edit_mode = True
-                    st.rerun()
-            
-            with col2:
-                if st.button("🔄 Regenerate with AI", key="merge_regenerate_ai"):
-                    with st.spinner("Regenerating merged content..."):
-                        merged_content = merge_documents_with_ai(main_doc, similar_doc)
-                        st.session_state.merged_content = merged_content
-                        st.rerun()
+    # Display merged content
+    st.markdown("### 📝 Merged Document Preview")
     
-    # Apply merge actions
-    if st.session_state.get("merged_content"):
-        st.markdown("---")
-        st.markdown("### Apply Merge")
+    # Check if we're in manual edit mode
+    if st.session_state.get("manual_edit_mode", False):
+        # Manual edit mode - editable text area
+        st.markdown("**Manual Edit Mode** - You can edit the merged content below:")
+        edited_content = st.text_area(
+            "Edit Merged Content", 
+            value=st.session_state.get("merged_content", "Start editing here..."), 
+            height=300, 
+            key="manual_edit_area"
+        )
         
-        st.warning("⚠️ **Warning:** This action will update one document and delete the other in Confluence. This operation can be undone from the Merge History page.")
-        
-        col1, col2, col3 = st.columns([1, 1, 1])
-        
-        with col1:
-            if st.button("❌ Cancel", use_container_width=True, key="merge_cancel"):
-                st.session_state.merge_docs = None
-                st.session_state.merged_content = ""
+        col_save, col_cancel = st.columns(2)
+        with col_save:
+            if st.button("💾 Save Changes", use_container_width=True):
+                st.session_state.merged_content = edited_content
                 st.session_state.manual_edit_mode = False
-                st.session_state.page = 'duplicates'
+                st.success("Changes saved!")
                 st.rerun()
         
-        with col2:
-            if st.button("📝 Save Draft", use_container_width=True, key="merge_save_draft"):
-                st.success("Draft saved! You can return to continue editing later.")
+        with col_cancel:
+            if st.button("❌ Cancel Edit", use_container_width=True):
+                st.session_state.manual_edit_mode = False
+                st.rerun()
+    else:
+        # Display mode - show merged content
+        if st.session_state.get("merged_content"):
+            st.text_area("Merged Content", st.session_state.merged_content, height=300, disabled=True)
+        else:
+            st.text_area("Merged Content", "AI-generated merged content will appear here...", height=300, disabled=True)
+    
+    # Confluence integration section
+    if st.session_state.get("merged_content"):
+        st.markdown("---")
+        st.markdown("### 🔄 Apply to Confluence")
         
-        with col3:
-            if st.button("✅ Apply Merge", use_container_width=True, type="primary", key="merge_apply"):
+        # Debug information
+        with st.expander("� Debug Information", expanded=False):
+            st.markdown("**Main Document:**")
+            st.code(f"Title: {main_doc.metadata.get('title', 'N/A')}")
+            st.code(f"Source: {main_doc.metadata.get('source', 'N/A')}")
+            
+            st.markdown("**Similar Document:**")
+            st.code(f"Title: {similar_doc.metadata.get('title', 'N/A')}")
+            st.code(f"Source: {similar_doc.metadata.get('source', 'N/A')}")
+        
+        # Page selection
+        st.markdown("**Choose which page to keep:**")
+        col_main, col_similar = st.columns(2)
+        
+        with col_main:
+            main_title = main_doc.metadata.get('title', 'Untitled Page')
+            if st.button(f"📄 Keep Primary: {main_title}", use_container_width=True, key="keep_main"):
                 with st.spinner("Applying merge to Confluence..."):
                     success, message = apply_merge_to_confluence(
                         main_doc, 
                         similar_doc, 
                         st.session_state.merged_content, 
-                        keep_main
+                        keep_main=True
                     )
-                    
-                    if success:
-                        st.success(message)
-                        st.session_state.confluence_operation_result = {
-                            "success": True,
-                            "message": message
-                        }
-                        # Clear merge state
-                        st.session_state.merge_docs = None
-                        st.session_state.merged_content = ""
-                        st.session_state.manual_edit_mode = False
-                        # Navigate to merge history
-                        st.session_state.page = 'merge_history'
-                        st.rerun()
-                    else:
-                        st.error(f"Failed to apply merge: {message}")
-                        st.session_state.confluence_operation_result = {
-                            "success": False,
-                            "message": message
-                        }
+                    st.session_state.confluence_operation_result = (success, message)
+                    st.rerun()
+        
+        with col_similar:
+            similar_title = similar_doc.metadata.get('title', 'Untitled Page')
+            if st.button(f"🔗 Keep Similar: {similar_title}", use_container_width=True, key="keep_similar"):
+                with st.spinner("Applying merge to Confluence..."):
+                    success, message = apply_merge_to_confluence(
+                        main_doc, 
+                        similar_doc, 
+                        st.session_state.merged_content, 
+                        keep_main=False
+                    )
+                    st.session_state.confluence_operation_result = (success, message)
+                    st.rerun()
+        
+        # Show operation result
+        if st.session_state.get("confluence_operation_result"):
+            success, message = st.session_state.confluence_operation_result
+            if success:
+                st.success(f"✅ {message}")
+                # Clear merge state after successful operation
+                st.session_state.merge_docs = None
+                st.session_state.merged_content = ""
+                st.session_state.manual_edit_mode = False
+            else:
+                st.error(f"❌ {message}")
+            
+            # Clear result after showing
+            if st.button("🔄 Clear Result", key="clear_result"):
+                st.session_state.confluence_operation_result = None
+                st.rerun()
+        
+        # Warning about the operation
+        st.warning("⚠️ **Important**: This will permanently update one page and delete the other in Confluence. Make sure you have the necessary permissions and have reviewed the merged content.")
     
-    # Navigation
-    st.markdown("---")
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("← Back to Duplicates", key="merge_back_to_duplicates"):
-            st.session_state.page = 'duplicates'
-            st.rerun()
-    
-    with col2:
-        if st.button("📜 View Merge History", key="merge_view_history"):
-            st.session_state.page = 'merge_history'
-            st.rerun()
+    else:
+        st.info("� Generate merged content first to enable Confluence integration.")
