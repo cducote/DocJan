@@ -4,6 +4,8 @@ Settings page for DocJanitor.
 import streamlit as st
 from models.database import scan_for_duplicates
 from confluence.api import load_documents_from_spaces, get_available_spaces
+from config.user_profiles import UserProfileManager
+from ui.components.profile_setup import render_profile_setup_modal
 
 def render_settings():
     """
@@ -11,6 +13,104 @@ def render_settings():
     """
     st.title("⚙️ Settings")
     st.markdown("Configure DocJanitor settings and perform maintenance operations.")
+    
+    # User Profile Management Section
+    st.markdown("## 👤 User Profile Management")
+    
+    profile_manager = UserProfileManager()
+    profiles = profile_manager.list_profiles()
+    
+    if profiles:
+        # Show current active profile
+        current_profile = None
+        if hasattr(st.session_state, 'current_profile_name') and st.session_state.current_profile_name:
+            current_profile = profile_manager.get_profile(st.session_state.current_profile_name)
+        
+        if current_profile:
+            st.success(f"✅ Active Profile: **{current_profile['email']}**")
+            st.caption(f"🌐 {current_profile['confluence_url']}")
+        else:
+            st.warning("No active profile selected")
+        
+        # Profile management actions
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            if st.button("➕ Create New Profile", use_container_width=True, key="settings_new_profile"):
+                st.session_state.show_profile_setup = True
+        
+        with col2:
+            if st.button("✏️ Edit Current Profile", use_container_width=True, key="settings_edit_profile", disabled=not current_profile):
+                if current_profile:
+                    st.session_state.edit_profile = st.session_state.current_profile_name
+                    st.session_state.show_profile_setup = True
+        
+        with col3:
+            if st.button("🔄 Switch Profile", use_container_width=True, key="settings_switch_profile"):
+                # Show profile selection
+                selected_profile = st.selectbox(
+                    "Choose a profile:",
+                    options=profiles,
+                    key="settings_profile_selector"
+                )
+                
+                if st.button("Apply Selection", key="settings_apply_profile"):
+                    profile_data = profile_manager.get_profile_for_session_state(selected_profile)
+                    if profile_data:
+                        profile_manager.set_active_profile(selected_profile)
+                        for key, value in profile_data.items():
+                            setattr(st.session_state, key, value)
+                        st.success(f"✅ Switched to profile: {selected_profile}")
+        
+        # List all profiles with management options
+        st.markdown("### All Profiles")
+        for profile_name in profiles:
+            profile = profile_manager.get_profile(profile_name)
+            if profile:
+                with st.expander(f"📧 {profile['email']} ({'Active' if profile_name == st.session_state.get('current_profile_name') else 'Inactive'})", expanded=False):
+                    col1, col2 = st.columns([3, 1])
+                    
+                    with col1:
+                        st.write(f"**Email:** {profile['email']}")
+                        st.write(f"**Confluence URL:** {profile['confluence_url']}")
+                        st.write(f"**Created:** {profile.get('created_at', 'Unknown')}")
+                        st.write(f"**Last Used:** {profile.get('last_used', 'Never')}")
+                        
+                        # Show preferences if available
+                        if profile.get('preferences'):
+                            prefs = profile['preferences']
+                            st.write(f"**Default Similarity:** {prefs.get('default_similarity', 0.65)}")
+                            st.write(f"**Auto Load Spaces:** {'Yes' if prefs.get('auto_load_spaces') else 'No'}")
+                    
+                    with col2:
+                        if st.button("🗑️ Delete", key=f"settings_delete_{profile_name}", help="Delete this profile"):
+                            if st.session_state.get(f'confirm_delete_{profile_name}'):
+                                # Confirmed deletion
+                                success = profile_manager.delete_profile(profile_name)
+                                if success:
+                                    # Clear session state if deleting active profile
+                                    if profile_name == st.session_state.get('current_profile_name'):
+                                        for key in ['current_profile_name', 'current_user_email', 'confluence_url', 'api_token']:
+                                            if hasattr(st.session_state, key):
+                                                delattr(st.session_state, key)
+                                    st.success(f"Profile '{profile_name}' deleted successfully!")
+                                    st.rerun()
+                                else:
+                                    st.error("Failed to delete profile")
+                            else:
+                                # Ask for confirmation
+                                st.session_state[f'confirm_delete_{profile_name}'] = True
+                                st.warning("Click again to confirm")
+    else:
+        st.info("No user profiles found. Create your first profile to get started.")
+        if st.button("➕ Create First Profile", use_container_width=True, key="settings_create_first"):
+            st.session_state.show_profile_setup = True
+    
+    # Render profile setup modal if needed
+    if st.session_state.get('show_profile_setup'):
+        render_profile_setup_modal()
+    
+    st.markdown("---")
     
     # Duplicate detection settings
     st.markdown("## 🔍 Duplicate Detection")
