@@ -2,6 +2,15 @@
 Database operations and management for DocJanitor.
 """
 import os
+import sys
+
+# Fix for SQLite3 version compatibility on cloud platforms
+try:
+    import pysqlite3
+    sys.modules['sqlite3'] = pysqlite3
+except ImportError:
+    pass
+
 from langchain_openai import OpenAIEmbeddings
 from langchain_chroma import Chroma
 from config.settings import CHROMA_PERSIST_DIRECTORY

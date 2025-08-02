@@ -2,12 +2,20 @@ import os
 import requests
 import json
 import time
+import sys
 from dotenv import load_dotenv
+
+# Fix for SQLite3 version compatibility on cloud platforms
+try:
+    import pysqlite3
+    sys.modules['sqlite3'] = pysqlite3
+except ImportError:
+    pass
+
 from langchain_chroma import Chroma
 from langchain_openai import OpenAIEmbeddings
 import shutil
 import subprocess
-import sys
 
 # Load environment variables
 load_dotenv()
