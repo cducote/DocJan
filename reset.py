@@ -1,6 +1,7 @@
 import os
 import requests
 import json
+import time
 from dotenv import load_dotenv
 from langchain_chroma import Chroma
 from langchain_openai import OpenAIEmbeddings
@@ -157,6 +158,7 @@ def reset_chroma_database():
                 # Try to create a ChromaDB instance first to properly close any connections
                 print("[*] Attempting to properly close ChromaDB connections...")
                 
+                embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
                 db = Chroma(persist_directory=CHROMA_DB_DIR, embedding_function=embeddings)
                 
                 # Try to delete all documents first
@@ -377,3 +379,61 @@ if __name__ == "__main__":
                 print(f"    - {failure['title']}{space_info}: {failure['error']}")
     else:
         print("[-] Reset cancelled.")
+
+
+def run_complete_reset_multi_space(spaces_dict=None):
+    """
+    Delete all pages from multiple spaces and reset ChromaDB.
+    
+    Args:
+        spaces_dict (dict): Dictionary of space keys and names to reset.
+                           If None, uses session state selected_spaces.
+    """
+    if spaces_dict is None:
+        import streamlit as st
+        if hasattr(st.session_state, 'selected_spaces'):
+            spaces_dict = st.session_state.selected_spaces
+        else:
+            print("❌ No spaces selected for reset")
+            return False
+    
+    if not spaces_dict:
+        print("❌ No spaces provided for reset")
+        return False
+    
+    print(f"🗑️ Starting complete reset for {len(spaces_dict)} spaces...")
+    
+    # Delete pages from all selected spaces
+    all_deleted_pages = []
+    all_failed_deletions = []
+    
+    for space_key, space_name in spaces_dict.items():
+        print(f"\n📁 Processing space: {space_name} ({space_key})")
+        deleted_pages, failed_deletions = delete_all_pages_in_space(space_key)
+        
+        all_deleted_pages.extend(deleted_pages)
+        all_failed_deletions.extend(failed_deletions)
+        
+        if failed_deletions:
+            print(f"⚠️ {len(failed_deletions)} pages failed to delete from {space_name}")
+        else:
+            print(f"✅ Successfully deleted {len(deleted_pages)} pages from {space_name}")
+    
+    # Reset ChromaDB
+    print("\n🔄 Resetting ChromaDB...")
+    chroma_success, chroma_message = reset_chroma_database()
+    print(f"ChromaDB reset: {chroma_message}")
+    
+    # Return success if no failures occurred
+    success = len(all_failed_deletions) == 0 and chroma_success
+    
+    if success:
+        print(f"✅ Complete multi-space reset successful!")
+        print(f"   Total pages deleted: {len(all_deleted_pages)}")
+        print(f"   Spaces processed: {len(spaces_dict)}")
+        return True
+    else:
+        print("❌ Multi-space reset completed with some errors")
+        print(f"   Pages deleted: {len(all_deleted_pages)}")
+        print(f"   Failed deletions: {len(all_failed_deletions)}")
+        return False
