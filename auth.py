@@ -1,5 +1,5 @@
 """
-Simple authentication module for DocJanitor sandbox
+Simple authentication module for Concatly sandbox
 """
 import streamlit as st
 import hashlib
@@ -23,7 +23,7 @@ def check_password(username, password):
 
 def login_form():
     """Display login form and handle authentication"""
-    st.title("🔐 DocJanitor Sandbox Access")
+    st.title("🔐 Concatly Sandbox Access")
     st.markdown("---")
     
     # Create login form
@@ -42,15 +42,6 @@ def login_form():
             else:
                 st.error("Invalid username or password")
     
-    # Show demo credentials
-    st.markdown("---")
-    st.subheader("Demo Credentials")
-    st.info("""
-    **Available demo accounts:**
-    - Username: `demo`, Password: `password123`
-    - Username: `tester`, Password: `test456`
-    - Username: `admin`, Password: `admin789`
-    """)
 
 def logout():
     """Handle user logout"""

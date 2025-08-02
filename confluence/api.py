@@ -1,5 +1,5 @@
 """
-Confluence API operations for DocJanitor.
+Confluence API operations for Concatly.
 """
 import requests
 import json
@@ -478,7 +478,7 @@ def restore_confluence_page_version(page_id, version_number):
         update_data = {
             "version": {
                 "number": current_version + 1,
-                "message": f"Reverted to version {version_number} via DocJanitor undo operation"
+                "message": f"Reverted to version {version_number} via Concatly undo operation"
             },
             "title": version_data.get('title'),
             "type": "page",

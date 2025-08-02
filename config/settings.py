@@ -1,5 +1,5 @@
 """
-Configuration settings for DocJanitor application.
+Configuration settings for Concatly application.
 """
 import os
 from dotenv import load_dotenv

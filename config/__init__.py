@@ -1,1 +1,1 @@
-# Configuration module for DocJanitor
+# Configuration module for Concatly

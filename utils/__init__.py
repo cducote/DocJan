@@ -1,1 +1,1 @@
-# Utilities module for DocJanitor
+# Utilities module for Concatly

@@ -1,5 +1,5 @@
 """
-Database operations and management for DocJanitor.
+Database operations and management for Concatly.
 """
 import os
 import sys

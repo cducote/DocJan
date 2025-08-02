@@ -1,1 +1,1 @@
-# Database module for DocJanitor
+# Database module for Concatly

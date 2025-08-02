@@ -334,7 +334,7 @@ def run_complete_reset(space_keys=None):
 
 if __name__ == "__main__":
     # Interactive mode when run directly
-    print("[*] DocJanitor Reset Tool")
+    print("[*] Concatly Reset Tool")
     print("This will delete ALL pages in the Confluence spaces and reset the Chroma database.")
     print("[!] WARNING: This action is irreversible!")
     

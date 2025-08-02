@@ -33,7 +33,7 @@ A Streamlit application for semantic search and AI-powered merging of Confluence
 
 ### Module Structure
 ```
-DocJanitor/
+Concatly/
 ├── ai/              # AI operations (merging, embeddings)
 ├── config/          # Application configuration and settings
 ├── confluence/      # Confluence API integration

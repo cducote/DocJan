@@ -1,5 +1,5 @@
 """
-Utility functions for DocJanitor application.
+Utility functions for Concatly application.
 """
 from datetime import datetime, timezone
 import pytz

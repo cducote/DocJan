@@ -1,5 +1,5 @@
 """
-PostgreSQL versioning operations for DocJanitor.
+PostgreSQL versioning operations for Concatly.
 """
 import os
 import json

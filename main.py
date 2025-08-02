@@ -1,7 +1,7 @@
 """
-DocJanitor - Confluence Duplicate Manager
+Concatly - Confluence Duplicate Manager
 
-This is the main entry point for the DocJanitor application,
+This is the main entry point for the Concatly application,
 which helps manage and merge duplicate content in Confluence.
 """
 import streamlit as st
@@ -13,7 +13,7 @@ from auth import require_auth, show_auth_status
 
 def main():
     """
-    Main entry point for DocJanitor application
+    Main entry point for Concatly application
     """
     # Set page config
     st.set_page_config(page_title="Concatly - Confluence Duplicate Manager", layout="wide")

@@ -1,5 +1,5 @@
 """
-Confluence Spaces management page for DocJanitor.
+Confluence Spaces management page for Concatly.
 """
 import streamlit as st
 import pandas as pd

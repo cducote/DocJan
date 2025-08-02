@@ -1,5 +1,5 @@
 """
-Duplicates page for DocJanitor.
+Duplicates page for Concatly.
 """
 import streamlit as st
 from utils.helpers import get_detected_duplicates, format_timestamp_to_est

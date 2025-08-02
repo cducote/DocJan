@@ -1,1 +1,1 @@
-# AI module for DocJanitor
+# AI module for Concatly

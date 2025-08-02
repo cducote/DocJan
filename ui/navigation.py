@@ -1,5 +1,5 @@
 """
-Navigation components for DocJanitor application.
+Navigation components for Concatly application.
 """
 import streamlit as st
 
@@ -32,7 +32,7 @@ def render_sidebar():
     Render the sidebar navigation menu
     """
     with st.sidebar:
-        st.title("DocJanitor")
+        st.title("Concatly")
         st.markdown("### Menu")
         
         # Navigation buttons

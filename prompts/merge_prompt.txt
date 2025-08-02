@@ -38,6 +38,6 @@ CRITICAL:
 - Do NOT wrap the output in ```html code blocks
 - Do NOT refer to the existence of "two documents" in the final content
 - Return ONLY the final merged content that should appear on the Confluence page
-- Always end the merged content with: <p><em>Merged by DocJanitor</em></p>
+- Always end the merged content with: <p><em>Merged by Concatly</em></p>
 
 If either original page includes outdated or unnecessary information, omit it.

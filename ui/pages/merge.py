@@ -1,5 +1,5 @@
 """
-Merge page for DocJanitor.
+Merge page for Concatly.
 """
 import streamlit as st
 from ai.merging import merge_documents_with_ai

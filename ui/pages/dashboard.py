@@ -1,5 +1,5 @@
 """
-Dashboard page for DocJanitor.
+Dashboard page for Concatly.
 """
 import streamlit as st
 import time
@@ -10,7 +10,7 @@ def render_dashboard():
     Render the dashboard page
     """
     st.title("🏠 Dashboard")
-    st.markdown("Welcome to DocJanitor - your Confluence duplicate document manager!")
+    st.markdown("Welcome to Concatly - your Confluence duplicate document manager!")
     
     # Get database
     db = get_document_database()

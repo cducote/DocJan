@@ -571,7 +571,7 @@ def restore_confluence_page_version(page_id, version_number):
         update_data = {
             "version": {
                 "number": current_version + 1,
-                "message": f"Reverted to version {version_number} via DocJanitor undo operation"
+                "message": f"Reverted to version {version_number} via Concatly undo operation"
             },
             "title": version_data.get('title'),
             "type": "page",
@@ -1547,11 +1547,11 @@ def get_detected_duplicates(space_filter=None, cross_space_only=False, within_sp
         return []
 
 # Streamlit UI
-st.set_page_config(page_title="DocJanitor - Confluence Duplicate Manager", layout="wide")
+st.set_page_config(page_title="Concatly - Confluence Duplicate Manager", layout="wide")
 
 # Navigation sidebar
 with st.sidebar:
-    st.markdown("# **DocJanitor**")
+    st.markdown("# **Concatly**")
     st.markdown("*Confluence Duplicate Manager*")
     st.markdown("---")
     
@@ -1645,7 +1645,7 @@ with st.sidebar:
 # Page routing
 if st.session_state.page == 'dashboard':
     st.title("🏠 Dashboard")
-    st.markdown("Welcome to DocJanitor - your Confluence duplicate document manager!")
+    st.markdown("Welcome to Concatly - your Confluence duplicate document manager!")
     
     # Create two columns for the main sections
     col1, col2 = st.columns(2)
@@ -2740,7 +2740,7 @@ elif st.session_state.page == 'recent_merges':
         st.markdown("---")
         st.markdown("### ℹ️ How Undo Works")
         st.markdown("""
-        **DocJanitor uses Confluence's native capabilities for undo operations:**
+        **Concatly uses Confluence's native capabilities for undo operations:**
         - **Version Restore**: The kept page is reverted to its pre-merge version using Confluence version history
         - **Trash Restore**: The deleted page is restored from Confluence trash
         - **No Data Loss**: All original content is preserved through Confluence's built-in features

@@ -1,5 +1,5 @@
 """
-Search page for DocJanitor.
+Search page for Concatly.
 """
 import streamlit as st
 from models.database import get_document_database

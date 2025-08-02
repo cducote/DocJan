@@ -1,5 +1,5 @@
 """
-Merge history page for DocJanitor.
+Merge history page for Concatly.
 """
 import streamlit as st
 from models.database import get_recent_merges

@@ -1,1 +1,1 @@
-# UI Pages module for DocJanitor
+# UI Pages module for Concatly

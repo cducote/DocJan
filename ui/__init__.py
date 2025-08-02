@@ -1,1 +1,1 @@
-# UI module for DocJanitor
+# UI module for Concatly

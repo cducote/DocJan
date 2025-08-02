@@ -1,5 +1,5 @@
 """
-Settings page for DocJanitor.
+Settings page for Concatly.
 """
 import streamlit as st
 from models.database import scan_for_duplicates
@@ -10,7 +10,7 @@ def render_settings():
     Render the settings page
     """
     st.title("⚙️ Settings")
-    st.markdown("Configure DocJanitor settings and perform maintenance operations.")
+    st.markdown("Configure Concatly settings and perform maintenance operations.")
     
     # Duplicate detection settings
     st.markdown("## 🔍 Duplicate Detection")
