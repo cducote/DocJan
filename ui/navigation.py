@@ -9,6 +9,8 @@ def initialize_navigation():
     """
     if 'page' not in st.session_state:
         st.session_state.page = 'dashboard'
+    if 'platform' not in st.session_state:
+        st.session_state.platform = 'confluence'  # Default platform
     if 'merge_docs' not in st.session_state:
         st.session_state.merge_docs = None
     if 'merged_content' not in st.session_state:
@@ -17,10 +19,6 @@ def initialize_navigation():
         st.session_state.manual_edit_mode = False
     if 'confluence_operation_result' not in st.session_state:
         st.session_state.confluence_operation_result = None
-    if 'reset_confirmation' not in st.session_state:
-        st.session_state.reset_confirmation = False
-    if 'reset_result' not in st.session_state:
-        st.session_state.reset_result = None
     if 'available_spaces' not in st.session_state:
         st.session_state.available_spaces = None
     if 'selected_spaces' not in st.session_state:
@@ -33,6 +31,22 @@ def render_sidebar():
     """
     with st.sidebar:
         st.title("Concatly")
+        
+        # Platform Selection
+        st.markdown("### Platform")
+        platform = st.selectbox(
+            "Choose Platform:",
+            ["confluence", "sharepoint"],
+            index=0 if st.session_state.platform == 'confluence' else 1,
+            format_func=lambda x: "📄 Confluence" if x == 'confluence' else "📁 SharePoint",
+            key="platform_selector"
+        )
+        
+        # Update platform if changed
+        if platform != st.session_state.platform:
+            st.session_state.platform = platform
+            st.rerun()
+        
         st.markdown("### Menu")
         
         # Navigation buttons
@@ -40,9 +54,11 @@ def render_sidebar():
             st.session_state.page = 'dashboard'
             st.rerun()
 
-        if st.button("🌐 Spaces", use_container_width=True, key="nav_spaces"):
-            st.session_state.page = 'spaces'
-            st.rerun()
+        # Only show Spaces button for Confluence
+        if st.session_state.platform == 'confluence':
+            if st.button("🌐 Spaces", use_container_width=True, key="nav_spaces"):
+                st.session_state.page = 'spaces'
+                st.rerun()
             
         if st.button("🔍 Search", use_container_width=True, key="nav_search"):
             st.session_state.page = 'search'

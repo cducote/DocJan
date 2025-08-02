@@ -48,8 +48,19 @@ def render_duplicates_page():
     Render the duplicates page
     """
     st.title("🔄 Duplicate Detection")
-    st.markdown("Review and manage document pairs that have been automatically detected as potential duplicates.")
     
+    # Check current platform
+    platform = st.session_state.get('platform', 'confluence')
+    
+    if platform == 'confluence':
+        st.markdown("Review and manage Confluence document pairs that have been automatically detected as potential duplicates.")
+        render_confluence_duplicates()
+    else:
+        st.markdown("Review and manage SharePoint document pairs that have been automatically detected as potential duplicates.")
+        render_sharepoint_duplicates()
+
+def render_confluence_duplicates():
+    """Render Confluence-specific duplicates"""
     # Get detected duplicates
     duplicate_pairs = get_detected_duplicates(space_keys=st.session_state.selected_spaces)
     
@@ -75,6 +86,146 @@ def render_duplicates_page():
         st.info("No duplicate pairs found with the current filters.")
         return
 
+    render_duplicate_pairs(filtered_pairs, platform="confluence")
+
+def render_sharepoint_duplicates():
+    """Render SharePoint-specific duplicates"""
+    try:
+        from sharepoint.api import SharePointAPI
+        sharepoint_api = SharePointAPI()
+        
+        # Get SharePoint documents
+        documents = sharepoint_api.get_documents("Concatly_Test_Documents")
+        
+        if not documents:
+            st.info("No SharePoint documents found. Upload some documents to see duplicates.")
+            return
+        
+        st.info(f"Found {len(documents)} SharePoint documents to analyze for duplicates.")
+        
+        # Enhanced duplicate detection based on document names and content patterns
+        duplicate_pairs = []
+        
+        # More sophisticated similarity detection
+        for i, doc1 in enumerate(documents):
+            for j, doc2 in enumerate(documents[i+1:], i+1):
+                similarity_score = calculate_sharepoint_similarity(doc1, doc2)
+                
+                if similarity_score > 0.2:  # Lower threshold to catch more potential duplicates
+                    duplicate_pairs.append({
+                        "doc1": {
+                            "metadata": {
+                                "title": doc1['name'], 
+                                "source": doc1.get('webUrl', '#'), 
+                                "platform": "sharepoint"
+                            }, 
+                            "id": doc1['id']
+                        },
+                        "doc2": {
+                            "metadata": {
+                                "title": doc2['name'], 
+                                "source": doc2.get('webUrl', '#'), 
+                                "platform": "sharepoint"
+                            }, 
+                            "id": doc2['id']
+                        },
+                        "similarity": similarity_score
+                    })
+        
+        st.info(f"Found {len(duplicate_pairs)} potential duplicate pairs before filtering.")
+        
+        # Show filters
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            min_similarity = st.slider(
+                "Min. Similarity", 
+                min_value=0.20, 
+                max_value=1.0, 
+                value=0.40,
+                step=0.01, 
+                format="%.2f",
+                key="sp_similarity"
+            )
+        
+        with col2:
+            st.info(f"Showing duplicate pairs with similarity >= {min_similarity:.0%}")
+        
+        # Filter pairs by similarity
+        filtered_pairs = [pair for pair in duplicate_pairs if pair.get("similarity", 0) >= min_similarity]
+        
+        if not filtered_pairs:
+            st.warning("No duplicate pairs found with the current filters. Try lowering the similarity threshold.")
+            
+            # Show debug information
+            with st.expander("🔍 Debug Information"):
+                st.markdown("**All Documents Found:**")
+                for i, doc in enumerate(documents):
+                    st.write(f"{i+1}. {doc['name']}")
+                
+                if duplicate_pairs:
+                    st.markdown(f"**All {len(duplicate_pairs)} Potential Pairs (before filtering):**")
+                    for i, pair in enumerate(duplicate_pairs):
+                        doc1_name = pair["doc1"]["metadata"]["title"]
+                        doc2_name = pair["doc2"]["metadata"]["title"]
+                        similarity = pair["similarity"]
+                        st.write(f"{i+1}. {doc1_name} ↔ {doc2_name} ({similarity:.2%})")
+            return
+
+        render_duplicate_pairs(filtered_pairs, platform="sharepoint")
+        
+    except Exception as e:
+        st.error(f"Error loading SharePoint duplicates: {e}")
+        st.info("Make sure SharePoint is properly configured and accessible.")
+
+def calculate_sharepoint_similarity(doc1, doc2):
+    """Calculate similarity between two SharePoint documents"""
+    name1 = doc1['name'].lower()
+    name2 = doc2['name'].lower()
+    
+    # Remove file extensions
+    name1_clean = name1.replace('.txt', '').replace('.docx', '').replace('.pdf', '')
+    name2_clean = name2.replace('.txt', '').replace('.docx', '').replace('.pdf', '')
+    
+    # Multiple similarity checks
+    similarities = []
+    
+    # 1. Direct name similarity (for files like "v1" vs "v2")
+    if name1_clean.replace('v1', '').replace('v2', '').replace('_', ' ').replace('-', ' ') == \
+       name2_clean.replace('v1', '').replace('v2', '').replace('_', ' ').replace('-', ' '):
+        similarities.append(0.9)  # Very high similarity for version differences
+    
+    # 2. Word-based similarity
+    words1 = set(name1_clean.replace('_', ' ').replace('-', ' ').split())
+    words2 = set(name2_clean.replace('_', ' ').replace('-', ' ').split())
+    
+    # Remove version numbers and common words
+    common_stopwords = {'v1', 'v2', 'guide', 'how', 'to', 'the', 'and', 'or', 'for', 'of'}
+    words1 = words1 - common_stopwords
+    words2 = words2 - common_stopwords
+    
+    if len(words1) > 0 and len(words2) > 0:
+        common_words = words1.intersection(words2)
+        word_similarity = len(common_words) / len(words1.union(words2))
+        similarities.append(word_similarity)
+    
+    # 3. Substring similarity for similar concepts
+    similarity_patterns = [
+        ('password', 'reset'),
+        ('meeting', 'guidelines'),
+        ('best', 'practices'),
+        ('security', 'policy'),
+        ('remote', 'work')
+    ]
+    
+    for pattern in similarity_patterns:
+        if all(word in name1_clean for word in pattern) and all(word in name2_clean for word in pattern):
+            similarities.append(0.8)
+    
+    # Return the highest similarity score
+    return max(similarities) if similarities else 0.0
+
+def render_duplicate_pairs(filtered_pairs, platform="confluence"):
+    """Render duplicate pairs for any platform"""
     # Create tabs for different views
     tab1, tab2 = st.tabs(["📋 Summary View", "📖 Detailed View"])
     
@@ -92,109 +243,143 @@ def render_duplicates_page():
                 col_a, col_b, col_actions = st.columns([3, 3, 2])
                 
                 with col_a:
-                    title1 = doc1.metadata.get("title", "Untitled")
-                    space1 = doc1.metadata.get("space_key", "Unknown")
-                    space_name1 = doc1.metadata.get("space_name", space1)
+                    title1 = doc1.get("metadata", {}).get("title", "Untitled")
                     
                     st.markdown(f"📄 **{title1}**")
-                    st.markdown(f"🌐 Space: **{space_name1}**")
-                    if doc1.metadata.get('source'):
-                        st.markdown(f"🔗 [View Page]({doc1.metadata['source']})")
+                    
+                    if platform == "confluence":
+                        space1 = doc1.get("metadata", {}).get("space_key", "Unknown")
+                        space_name1 = doc1.get("metadata", {}).get("space_name", space1)
+                        st.markdown(f"🌐 Space: **{space_name1}**")
+                    else:
+                        st.markdown(f"📁 **SharePoint Document**")
+                    
+                    if doc1.get("metadata", {}).get('source'):
+                        st.markdown(f"🔗 [View Document]({doc1.get('metadata', {})['source']})")
                 
                 with col_b:
-                    title2 = doc2.metadata.get("title", "Untitled")
-                    space2 = doc2.metadata.get("space_key", "Unknown")
-                    space_name2 = doc2.metadata.get("space_name", space2)
+                    title2 = doc2.get("metadata", {}).get("title", "Untitled")
                     
                     st.markdown(f"📄 **{title2}**")
-                    st.markdown(f"🌐 Space: **{space_name2}**")
-                    if doc2.metadata.get('source'):
-                        st.markdown(f"🔗 [View Page]({doc2.metadata['source']})")
+                    
+                    if platform == "confluence":
+                        space2 = doc2.get("metadata", {}).get("space_key", "Unknown")
+                        space_name2 = doc2.get("metadata", {}).get("space_name", space2)
+                        st.markdown(f"🌐 Space: **{space_name2}**")
+                    else:
+                        st.markdown(f"📁 **SharePoint Document**")
+                    
+                    if doc2.get("metadata", {}).get('source'):
+                        st.markdown(f"🔗 [View Document]({doc2.get('metadata', {})['source']})")
                 
                 with col_actions:
                     # Add similarity meter
                     render_similarity_meter(similarity)
                     
-                    # Determine if this is cross-space or within-space
-                    if space1 != space2:
-                        st.markdown("🔄 **Cross-Space**")
+                    if platform == "confluence":
+                        # Determine if this is cross-space or within-space
+                        space1 = doc1.get("metadata", {}).get("space_key", "Unknown")
+                        space2 = doc2.get("metadata", {}).get("space_key", "Unknown")
+                        if space1 != space2:
+                            st.markdown("🔄 **Cross-Space**")
+                        else:
+                            st.markdown("📁 **Within-Space**")
                     else:
-                        st.markdown("📁 **Within-Space**")
+                        st.markdown("📁 **SharePoint**")
                     
-                    # Merge button
-                    if st.button(f"🔀 Merge", key=f"dup_merge_{i}"):
-                        st.session_state.merge_docs = {
-                            "main_doc": doc1,
-                            "similar_doc": doc2,
-                            "similarity": similarity
-                        }
-                        st.session_state.page = 'merge'
-                        st.rerun()
+                    # Merge button - only for Confluence for now
+                    if platform == "confluence":
+                        if st.button(f"🔀 Merge", key=f"dup_merge_{i}"):
+                            st.session_state.merge_docs = {
+                                "main_doc": doc1,
+                                "similar_doc": doc2,
+                                "similarity": similarity
+                            }
+                            st.session_state.page = 'merge'
+                            st.rerun()
+                    else:
+                        st.info("SharePoint merge coming soon!")
                 
                 st.markdown("---")
     
     with tab2:
-        # Detailed view with full content preview
+        # Detailed view with content preview
         for i, pair in enumerate(filtered_pairs):
             doc1 = pair.get("doc1", {})
             doc2 = pair.get("doc2", {})
             similarity = pair.get("similarity", 0)
             
-            title1 = doc1.metadata.get("title", "Untitled")
-            title2 = doc2.metadata.get("title", "Untitled")
+            title1 = doc1.get("metadata", {}).get("title", "Untitled")
+            title2 = doc2.get("metadata", {}).get("title", "Untitled")
             
             with st.expander(f"📋 Pair {i+1}: {title1} ↔ {title2}"):
                 
-                # Space information
-                col_space1, col_space2 = st.columns(2)
-                with col_space1:
-                    space1 = doc1.metadata.get("space_key", "Unknown")
-                    space_name1 = doc1.metadata.get("space_name", space1)
-                    st.markdown(f"**Space:** **{space_name1}**")
-                with col_space2:
-                    space2 = doc2.metadata.get("space_key", "Unknown")
-                    space_name2 = doc2.metadata.get("space_name", space2)
-                    st.markdown(f"**Space:** **{space_name2}**")
+                # Platform-specific information
+                if platform == "confluence":
+                    # Space information
+                    col_space1, col_space2 = st.columns(2)
+                    with col_space1:
+                        space1 = doc1.get("metadata", {}).get("space_key", "Unknown")
+                        space_name1 = doc1.get("metadata", {}).get("space_name", space1)
+                        st.markdown(f"**Space:** **{space_name1}**")
+                    with col_space2:
+                        space2 = doc2.get("metadata", {}).get("space_key", "Unknown")
+                        space_name2 = doc2.get("metadata", {}).get("space_name", space2)
+                        st.markdown(f"**Space:** **{space_name2}**")
+                else:
+                    # SharePoint information
+                    col_info1, col_info2 = st.columns(2)
+                    with col_info1:
+                        st.markdown(f"**Platform:** SharePoint")
+                        st.markdown(f"**Document ID:** {doc1.get('id', 'Unknown')}")
+                    with col_info2:
+                        st.markdown(f"**Platform:** SharePoint")
+                        st.markdown(f"**Document ID:** {doc2.get('id', 'Unknown')}")
                 
                 # Content preview
                 col_content1, col_content2 = st.columns(2)
                 
                 with col_content1:
                     st.markdown(f"**{title1}**")
-                    content_preview = doc1.page_content[:300] + "..." if len(doc1.page_content) > 300 else doc1.page_content
-                    st.markdown(f"```\n{content_preview}\n```")
-                    if doc1.metadata.get('source'):
-                        st.markdown(f"🔗 [View Full Page]({doc1.metadata['source']})")
                     
-                    # Updated timestamp
-                    updated1 = doc1.metadata.get("last_updated", "")
-                    if updated1:
-                        st.markdown(f"**Updated:** {format_timestamp_to_est(updated1)}")
-                
+                    if platform == "confluence" and hasattr(doc1, 'page_content'):
+                        content_preview = doc1.page_content[:300] + "..." if len(doc1.page_content) > 300 else doc1.page_content
+                        st.markdown(f"```\n{content_preview}\n```")
+                    else:
+                        st.info("Content preview not available for SharePoint documents")
+                    
+                    if doc1.get("metadata", {}).get('source'):
+                        st.markdown(f"🔗 [View Document]({doc1.get('metadata', {})['source']})")
+                    
                 with col_content2:
                     st.markdown(f"**{title2}**")
-                    content_preview = doc2.page_content[:300] + "..." if len(doc2.page_content) > 300 else doc2.page_content
-                    st.markdown(f"```\n{content_preview}\n```")
-                    if doc2.metadata.get('source'):
-                        st.markdown(f"🔗 [View Full Page]({doc2.metadata['source']})")
                     
-                    # Updated timestamp
-                    updated2 = doc2.metadata.get("last_updated", "")
-                    if updated2:
-                        st.markdown(f"**Updated:** {format_timestamp_to_est(updated2)}")
+                    if platform == "confluence" and hasattr(doc2, 'page_content'):
+                        content_preview = doc2.page_content[:300] + "..." if len(doc2.page_content) > 300 else doc2.page_content
+                        st.markdown(f"```\n{content_preview}\n```")
+                    else:
+                        st.info("Content preview not available for SharePoint documents")
+                    
+                    if doc2.get("metadata", {}).get('source'):
+                        st.markdown(f"🔗 [View Document]({doc2.get('metadata', {})['source']})")
                 
-                # Action buttons
-                st.markdown("**Actions:**")
-                col_action1, col_action2 = st.columns(2)
-                with col_action1:
-                    if st.button(f"🔀 Merge Documents", key=f"dup_merge_detail_{i}"):
-                        st.session_state.merge_docs = {
-                            "main_doc": doc1,
-                            "similar_doc": doc2,
-                            "similarity": similarity
-                        }
-                        st.session_state.page = 'merge'
-                        st.rerun()
-                with col_action2:
-                    # Add similarity meter in detailed view too
+                # Similarity information
+                st.markdown("---")
+                col_sim, col_action = st.columns([2, 1])
+                
+                with col_sim:
                     render_similarity_meter(similarity)
+                    st.markdown(f"**Similarity Score:** {similarity:.2%}")
+                
+                with col_action:
+                    if platform == "confluence":
+                        if st.button(f"🔀 Merge These Documents", key=f"detailed_merge_{i}"):
+                            st.session_state.merge_docs = {
+                                "main_doc": doc1,
+                                "similar_doc": doc2,
+                                "similarity": similarity
+                            }
+                            st.session_state.page = 'merge'
+                            st.rerun()
+                    else:
+                        st.info("SharePoint merge coming soon!")

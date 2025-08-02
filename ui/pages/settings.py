@@ -109,13 +109,13 @@ def render_settings():
     
     st.markdown("---")
     
-    # Database maintenance
-    st.markdown("## 🗄️ Database Maintenance")
+    # Essential maintenance only
+    st.markdown("## � Basic Tools")
     
     col1, col2 = st.columns(2)
     
     with col1:
-        st.markdown("### ChromaDB Status")
+        st.markdown("### Database Status")
         from models.database import get_document_database
         db = get_document_database()
         
@@ -127,16 +127,7 @@ def render_settings():
             st.error(f"Database error: {str(e)}")
     
     with col2:
-        st.markdown("### Quick Actions")
-        
-        if st.button("🧹 Clean Duplicate DB Entries", key="settings_clean_db"):
-            from models.database import cleanup_duplicate_database_entries
-            with st.spinner("Cleaning up duplicate database entries..."):
-                success, message = cleanup_duplicate_database_entries()
-                if success:
-                    st.success(f"✅ {message}")
-                else:
-                    st.error(f"❌ {message}")
+        st.markdown("### Space Management")
         
         if st.button("🔄 Refresh Space List", key="settings_refresh_spaces"):
             with st.spinner("Refreshing available spaces..."):
@@ -147,119 +138,15 @@ def render_settings():
     
     st.markdown("---")
     
-    # Advanced settings
-    with st.expander("🔧 Advanced Settings"):
-        st.markdown("### Debug Information")
-        
-        # Show session state for debugging
-        if st.checkbox("Show Session State"):
-            st.json({
-                "page": st.session_state.get("page"),
-                "selected_spaces": st.session_state.get("selected_spaces"),
-                "available_spaces_count": len(st.session_state.get("available_spaces", [])),
-                "merge_docs": "Set" if st.session_state.get("merge_docs") else "None",
-                "merged_content": "Set" if st.session_state.get("merged_content") else "None"
-            })
-        
-        # Reset session state
-        if st.button("🔄 Reset Session State", key="settings_reset_session"):
-            # Keep only essential state
-            essential_keys = ['page', 'selected_spaces', 'available_spaces']
-            keys_to_remove = [key for key in st.session_state.keys() if key not in essential_keys]
-            
-            for key in keys_to_remove:
-                del st.session_state[key]
-            
-            st.success("Session state reset!")
-            st.rerun()
-    
-    # Dangerous Operations
-    st.markdown("---")
-    st.markdown("## ⚠️ Dangerous Operations")
-    st.warning("These operations are irreversible and will affect your Confluence space and database.")
-    
-    # Initialize reset confirmation state
-    if 'reset_confirmation' not in st.session_state:
-        st.session_state.reset_confirmation = False
-    
-    # Reset confirmation workflow
-    if not st.session_state.reset_confirmation:
-        if st.button("🔥 Reset Everything", use_container_width=True, help="Delete ALL pages and reset database", key="settings_reset_everything"):
-            st.session_state.reset_confirmation = True
-            st.rerun()
-    else:
-        st.warning("⚠️ **WARNING**: This will permanently delete ALL pages in the Confluence space and reset the database!")
-        st.markdown("This action is **irreversible**. Are you sure?")
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("✅ Yes, Reset", use_container_width=True, type="primary", key="settings_confirm_reset"):
-                # Run the reset
-                with st.spinner("🔥 Resetting everything..."):
-                    try:
-                        # Import and run the reset function with error handling
-                        import subprocess
-                        import sys
-                        import os
-                        
-                        # Run reset.py as a subprocess to avoid encoding issues
-                        result = subprocess.run(
-                            [sys.executable, "reset.py"],
-                            cwd=os.getcwd(),
-                            capture_output=True,
-                            text=True,
-                            input="SD\nyes\n",  # Auto-confirm with default space
-                            timeout=300  # 5 minute timeout
-                        )
-                        
-                        if result.returncode == 0:
-                            st.session_state.reset_result = {
-                                'success': True,
-                                'message': 'Reset completed successfully!',
-                                'details': result.stdout
-                            }
-                        else:
-                            st.session_state.reset_result = {
-                                'success': False,
-                                'error': f"Reset process failed with return code {result.returncode}",
-                                'details': result.stderr
-                            }
-                        
-                        st.session_state.reset_confirmation = False
-                        st.rerun()
-                        
-                    except subprocess.TimeoutExpired:
-                        st.error("Reset failed: Operation timed out after 5 minutes")
-                        st.session_state.reset_confirmation = False
-                    except Exception as e:
-                        st.error(f"Reset failed: {str(e)}")
-                        st.session_state.reset_confirmation = False
-        
-        with col2:
-            if st.button("❌ Cancel", use_container_width=True, key="settings_cancel_reset"):
-                st.session_state.reset_confirmation = False
-                st.rerun()
-    
-    # Show reset results if available
-    if 'reset_result' in st.session_state and st.session_state.reset_result:
-        st.markdown("### Reset Results")
-        if st.session_state.reset_result.get('success'):
-            st.success("✅ Reset completed successfully!")
-            if 'details' in st.session_state.reset_result:
-                with st.expander("View Details"):
-                    st.text(st.session_state.reset_result['details'])
-        else:
-            st.error("❌ Reset failed!")
-            if 'error' in st.session_state.reset_result:
-                st.error(st.session_state.reset_result['error'])
-            if 'details' in st.session_state.reset_result:
-                with st.expander("View Error Details"):
-                    st.text(st.session_state.reset_result['details'])
-        
-        if st.button("Clear Results", key="settings_clear_reset_results"):
-            if 'reset_result' in st.session_state:
-                del st.session_state.reset_result
-            st.rerun()
+    # Simple debug info
+    with st.expander("� Debug Information"):
+        st.markdown("### Session Info")
+        st.json({
+            "page": st.session_state.get("page"),
+            "platform": st.session_state.get("platform"),
+            "selected_spaces": st.session_state.get("selected_spaces"),
+            "available_spaces_count": len(st.session_state.get("available_spaces", []))
+        })
     
     # Navigation
     st.markdown("---")

@@ -4,14 +4,28 @@ Dashboard page for Concatly.
 import streamlit as st
 import time
 from models.database import get_document_database
+from sharepoint.api import sharepoint_api
 
 def render_dashboard():
     """
     Render the dashboard page
     """
-    st.title("🏠 Dashboard")
-    st.markdown("Welcome to Concatly - your Confluence duplicate document manager!")
+    # Get current platform
+    platform = st.session_state.get('platform', 'confluence')
+    platform_name = "Confluence" if platform == 'confluence' else "SharePoint"
+    platform_icon = "📄" if platform == 'confluence' else "📁"
     
+    st.title(f"🏠 Dashboard - {platform_icon} {platform_name}")
+    st.markdown(f"Welcome to Concatly - your {platform_name} duplicate document manager!")
+    
+    # Platform-specific dashboard content
+    if platform == 'confluence':
+        render_confluence_dashboard()
+    else:
+        render_sharepoint_dashboard()
+
+def render_confluence_dashboard():
+    """Render Confluence-specific dashboard"""
     # Get database
     db = get_document_database()
     
@@ -19,8 +33,8 @@ def render_dashboard():
     col1, col2 = st.columns(2)
     
     with col1:
-        st.markdown("## 🔍 Search")
-        st.markdown("Search for documents and discover potential duplicates using semantic search.")
+        st.markdown("## 🔍 Search Confluence")
+        st.markdown("Search for Confluence pages and discover potential duplicates using semantic search.")
         
         # Quick search form
         with st.form("dashboard_quick_search"):
@@ -37,13 +51,13 @@ def render_dashboard():
         try:
             all_docs = db.get()
             total_docs = len(all_docs['documents']) if all_docs['documents'] else 0
-            st.metric("Total Documents", total_docs)
+            st.metric("Total Confluence Pages", total_docs)
         except Exception as e:
-            st.metric("Total Documents", "Error loading")
+            st.metric("Total Confluence Pages", "Error loading")
     
     with col2:
         st.markdown("## 📋 Detected Duplicates")
-        st.markdown("Review and manage document pairs that have been automatically detected as potential duplicates.")
+        st.markdown("Review and manage Confluence page pairs that have been automatically detected as potential duplicates.")
         
         # Get detected duplicates
         from utils.helpers import get_detected_duplicates
@@ -143,3 +157,55 @@ def render_dashboard():
     with stat_col4:
         # Calculate potential space saved (placeholder)
         st.metric("Potential Merges", len(duplicate_pairs) if 'duplicate_pairs' in locals() else 0)
+
+def render_sharepoint_dashboard():
+    """Render SharePoint-specific dashboard"""
+    # Create two columns for the main sections
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("## 🔍 Search SharePoint")
+        st.markdown("Search for SharePoint documents and discover potential duplicates.")
+        
+        # Quick search (placeholder for now)
+        with st.form("sharepoint_quick_search"):
+            quick_query = st.text_input("Quick Search", placeholder="Search SharePoint documents...")
+            search_submitted = st.form_submit_button("Search", use_container_width=True)
+            
+            if search_submitted and quick_query:
+                st.info("SharePoint search coming soon!")
+        
+        # SharePoint statistics
+        try:
+            folders = sharepoint_api.get_folders()
+            documents = sharepoint_api.get_documents("Concatly_Test_Documents")
+            st.metric("SharePoint Folders", len(folders))
+            st.metric("Test Documents", len(documents))
+        except Exception as e:
+            st.metric("SharePoint Folders", "Error loading")
+            st.metric("Test Documents", "Error loading")
+    
+    with col2:
+        st.markdown("## 📁 SharePoint Documents")
+        st.markdown("View and manage your SharePoint documents.")
+        
+        # Show recent documents
+        try:
+            documents = sharepoint_api.get_documents("Concatly_Test_Documents")
+            
+            if documents:
+                st.markdown("### Test Documents:")
+                for doc in documents[:5]:  # Show first 5
+                    with st.expander(f"📄 {doc['name']}"):
+                        st.write(f"**Size:** {doc['size']} bytes")
+                        st.write(f"**Modified:** {doc['last_modified']}")
+                        if st.button(f"View Content", key=f"view_{doc['id']}"):
+                            content = sharepoint_api.get_document_content(doc['id'])
+                            if content:
+                                st.text_area("Content:", content, height=200)
+            else:
+                st.info("No test documents found. Run the SharePoint seed script to create some!")
+        except Exception as e:
+            st.error(f"Error loading SharePoint documents: {e}")
+        
+
