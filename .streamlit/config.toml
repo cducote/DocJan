@@ -1,0 +1,14 @@
+# Streamlit configuration for hosting
+[server]
+port = 8501
+enableCORS = false
+enableXsrfProtection = false
+
+[browser]
+gatherUsageStats = false
+
+[theme]
+primaryColor = "#7A99EF"
+backgroundColor = "#F8F5EE"
+secondaryBackgroundColor = "#F0F2F6"
+textColor = "#262730"

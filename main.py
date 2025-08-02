@@ -9,6 +9,7 @@ import os
 from config.settings import validate_config
 from models.database import get_document_database
 from ui.navigation import initialize_navigation, render_sidebar, route_to_page
+from auth import require_auth, show_auth_status
 
 def main():
     """
@@ -16,6 +17,10 @@ def main():
     """
     # Set page config
     st.set_page_config(page_title="DocJanitor - Confluence Duplicate Manager", layout="wide")
+    
+    # Check authentication first
+    if not require_auth():
+        return
     
     # Validate configuration
     try:
@@ -34,6 +39,9 @@ def main():
     
     # Initialize navigation and session state
     initialize_navigation()
+    
+    # Show auth status in sidebar
+    show_auth_status()
     
     # Render sidebar navigation
     render_sidebar()
