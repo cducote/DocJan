@@ -16,7 +16,7 @@ def main():
     Main entry point for DocJanitor application
     """
     # Set page config
-    st.set_page_config(page_title="DocJanitor - Confluence Duplicate Manager", layout="wide")
+    st.set_page_config(page_title="Concatly - Confluence Duplicate Manager", layout="wide")
     
     # Check authentication first
     if not require_auth():
