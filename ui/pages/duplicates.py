@@ -228,58 +228,85 @@ def render_duplicate_pairs(filtered_pairs, platform="confluence"):
     """Render duplicate pairs for any platform"""
     # Create tabs for different views
     tab1, tab2 = st.tabs(["📋 Summary View", "📖 Detailed View"])
-    
+
     with tab1:
         # Summary view - compact list
         st.markdown(f"### Found {len(filtered_pairs)} duplicate pairs")
-        
+
         for i, pair in enumerate(filtered_pairs):
             doc1 = pair.get("doc1", {})
             doc2 = pair.get("doc2", {})
             similarity = pair.get("similarity", 0)
-            
+
             with st.container(border=True):
                 # Create columns for the two documents and actions
                 col_a, col_b, col_actions = st.columns([3, 3, 2])
-                
+
                 with col_a:
-                    title1 = doc1.get("metadata", {}).get("title", "Untitled")
+                    # Handle Document objects vs dictionaries
+                    if hasattr(doc1, 'metadata'):
+                        # It's a Document object
+                        title1 = doc1.metadata.get("title", "Untitled") if doc1.metadata else "Untitled"
+                        space1 = doc1.metadata.get("space_key", "Unknown") if doc1.metadata else "Unknown"
+                        space_name1 = doc1.metadata.get("space_name", space1) if doc1.metadata else space1
+                        source1 = doc1.metadata.get("source") if doc1.metadata else None
+                    else:
+                        # It's a dictionary
+                        title1 = doc1.get("metadata", {}).get("title", "Untitled")
+                        space1 = doc1.get("metadata", {}).get("space_key", "Unknown")
+                        space_name1 = doc1.get("metadata", {}).get("space_name", space1)
+                        source1 = doc1.get("metadata", {}).get('source')
                     
                     st.markdown(f"📄 **{title1}**")
                     
                     if platform == "confluence":
-                        space1 = doc1.get("metadata", {}).get("space_key", "Unknown")
-                        space_name1 = doc1.get("metadata", {}).get("space_name", space1)
                         st.markdown(f"🌐 Space: **{space_name1}**")
                     else:
                         st.markdown(f"📁 **SharePoint Document**")
                     
-                    if doc1.get("metadata", {}).get('source'):
-                        st.markdown(f"🔗 [View Document]({doc1.get('metadata', {})['source']})")
-                
+                    if source1:
+                        st.markdown(f"🔗 [View Document]({source1})")
+
                 with col_b:
-                    title2 = doc2.get("metadata", {}).get("title", "Untitled")
+                    # Handle Document objects vs dictionaries
+                    if hasattr(doc2, 'metadata'):
+                        # It's a Document object
+                        title2 = doc2.metadata.get("title", "Untitled") if doc2.metadata else "Untitled"
+                        space2 = doc2.metadata.get("space_key", "Unknown") if doc2.metadata else "Unknown"
+                        space_name2 = doc2.metadata.get("space_name", space2) if doc2.metadata else space2
+                        source2 = doc2.metadata.get("source") if doc2.metadata else None
+                    else:
+                        # It's a dictionary
+                        title2 = doc2.get("metadata", {}).get("title", "Untitled")
+                        space2 = doc2.get("metadata", {}).get("space_key", "Unknown")
+                        space_name2 = doc2.get("metadata", {}).get("space_name", space2)
+                        source2 = doc2.get("metadata", {}).get('source')
                     
                     st.markdown(f"📄 **{title2}**")
                     
                     if platform == "confluence":
-                        space2 = doc2.get("metadata", {}).get("space_key", "Unknown")
-                        space_name2 = doc2.get("metadata", {}).get("space_name", space2)
                         st.markdown(f"🌐 Space: **{space_name2}**")
                     else:
                         st.markdown(f"📁 **SharePoint Document**")
                     
-                    if doc2.get("metadata", {}).get('source'):
-                        st.markdown(f"🔗 [View Document]({doc2.get('metadata', {})['source']})")
-                
+                    if source2:
+                        st.markdown(f"🔗 [View Document]({source2})")
+
                 with col_actions:
                     # Add similarity meter
                     render_similarity_meter(similarity)
-                    
+
                     if platform == "confluence":
                         # Determine if this is cross-space or within-space
-                        space1 = doc1.get("metadata", {}).get("space_key", "Unknown")
-                        space2 = doc2.get("metadata", {}).get("space_key", "Unknown")
+                        if hasattr(doc1, 'metadata') and hasattr(doc2, 'metadata'):
+                            # Document objects
+                            space1 = doc1.metadata.get("space_key", "Unknown") if doc1.metadata else "Unknown"
+                            space2 = doc2.metadata.get("space_key", "Unknown") if doc2.metadata else "Unknown"
+                        else:
+                            # Dictionary objects
+                            space1 = doc1.get("metadata", {}).get("space_key", "Unknown")
+                            space2 = doc2.get("metadata", {}).get("space_key", "Unknown")
+                        
                         if space1 != space2:
                             st.markdown("🔄 **Cross-Space**")
                         else:
@@ -309,8 +336,16 @@ def render_duplicate_pairs(filtered_pairs, platform="confluence"):
             doc2 = pair.get("doc2", {})
             similarity = pair.get("similarity", 0)
             
-            title1 = doc1.get("metadata", {}).get("title", "Untitled")
-            title2 = doc2.get("metadata", {}).get("title", "Untitled")
+            # Handle Document objects vs dictionaries for titles
+            if hasattr(doc1, 'metadata'):
+                title1 = doc1.metadata.get("title", "Untitled") if doc1.metadata else "Untitled"
+            else:
+                title1 = doc1.get("metadata", {}).get("title", "Untitled")
+                
+            if hasattr(doc2, 'metadata'):
+                title2 = doc2.metadata.get("title", "Untitled") if doc2.metadata else "Untitled"
+            else:
+                title2 = doc2.get("metadata", {}).get("title", "Untitled")
             
             with st.expander(f"📋 Pair {i+1}: {title1} ↔ {title2}"):
                 
@@ -319,22 +354,32 @@ def render_duplicate_pairs(filtered_pairs, platform="confluence"):
                     # Space information
                     col_space1, col_space2 = st.columns(2)
                     with col_space1:
-                        space1 = doc1.get("metadata", {}).get("space_key", "Unknown")
-                        space_name1 = doc1.get("metadata", {}).get("space_name", space1)
+                        if hasattr(doc1, 'metadata'):
+                            space1 = doc1.metadata.get("space_key", "Unknown") if doc1.metadata else "Unknown"
+                            space_name1 = doc1.metadata.get("space_name", space1) if doc1.metadata else space1
+                        else:
+                            space1 = doc1.get("metadata", {}).get("space_key", "Unknown")
+                            space_name1 = doc1.get("metadata", {}).get("space_name", space1)
                         st.markdown(f"**Space:** **{space_name1}**")
                     with col_space2:
-                        space2 = doc2.get("metadata", {}).get("space_key", "Unknown")
-                        space_name2 = doc2.get("metadata", {}).get("space_name", space2)
+                        if hasattr(doc2, 'metadata'):
+                            space2 = doc2.metadata.get("space_key", "Unknown") if doc2.metadata else "Unknown"
+                            space_name2 = doc2.metadata.get("space_name", space2) if doc2.metadata else space2
+                        else:
+                            space2 = doc2.get("metadata", {}).get("space_key", "Unknown")
+                            space_name2 = doc2.get("metadata", {}).get("space_name", space2)
                         st.markdown(f"**Space:** **{space_name2}**")
                 else:
                     # SharePoint information
                     col_info1, col_info2 = st.columns(2)
                     with col_info1:
                         st.markdown(f"**Platform:** SharePoint")
-                        st.markdown(f"**Document ID:** {doc1.get('id', 'Unknown')}")
+                        doc1_id = getattr(doc1, 'id', None) if hasattr(doc1, 'id') else doc1.get('id', 'Unknown')
+                        st.markdown(f"**Document ID:** {doc1_id}")
                     with col_info2:
                         st.markdown(f"**Platform:** SharePoint")
-                        st.markdown(f"**Document ID:** {doc2.get('id', 'Unknown')}")
+                        doc2_id = getattr(doc2, 'id', None) if hasattr(doc2, 'id') else doc2.get('id', 'Unknown')
+                        st.markdown(f"**Document ID:** {doc2_id}")
                 
                 # Content preview
                 col_content1, col_content2 = st.columns(2)
@@ -348,8 +393,14 @@ def render_duplicate_pairs(filtered_pairs, platform="confluence"):
                     else:
                         st.info("Content preview not available for SharePoint documents")
                     
-                    if doc1.get("metadata", {}).get('source'):
-                        st.markdown(f"🔗 [View Document]({doc1.get('metadata', {})['source']})")
+                    # Handle source URL
+                    if hasattr(doc1, 'metadata') and doc1.metadata:
+                        source1 = doc1.metadata.get('source')
+                    else:
+                        source1 = doc1.get("metadata", {}).get('source')
+                    
+                    if source1:
+                        st.markdown(f"🔗 [View Document]({source1})")
                     
                 with col_content2:
                     st.markdown(f"**{title2}**")
@@ -360,8 +411,14 @@ def render_duplicate_pairs(filtered_pairs, platform="confluence"):
                     else:
                         st.info("Content preview not available for SharePoint documents")
                     
-                    if doc2.get("metadata", {}).get('source'):
-                        st.markdown(f"🔗 [View Document]({doc2.get('metadata', {})['source']})")
+                    # Handle source URL
+                    if hasattr(doc2, 'metadata') and doc2.metadata:
+                        source2 = doc2.metadata.get('source')
+                    else:
+                        source2 = doc2.get("metadata", {}).get('source')
+                    
+                    if source2:
+                        st.markdown(f"🔗 [View Document]({source2})")
                 
                 # Similarity information
                 st.markdown("---")

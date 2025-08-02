@@ -110,7 +110,7 @@ def render_settings():
     st.markdown("---")
     
     # Essential maintenance only
-    st.markdown("## � Basic Tools")
+    st.markdown("## 🔧 Basic Tools")
     
     col1, col2 = st.columns(2)
     
@@ -123,6 +123,10 @@ def render_settings():
             all_docs = db.get()
             doc_count = len(all_docs['documents']) if all_docs['documents'] else 0
             st.metric("Total Documents", doc_count)
+            
+            # Show warning if document count seems too high
+            if doc_count > 15:  # Assuming you should have around 10 docs
+                st.warning(f"⚠️ Document count seems high ({doc_count}). You may have duplicates in ChromaDB.")
         except Exception as e:
             st.error(f"Database error: {str(e)}")
     
@@ -136,16 +140,63 @@ def render_settings():
                 st.success(f"✅ Loaded {len(spaces)} available spaces")
                 st.rerun()
     
+    # Database maintenance section
+    st.markdown("### 🗃️ Database Maintenance")
+    st.markdown("Use these tools to fix common database issues:")
+    
+    col3, col4 = st.columns(2)
+    
+    with col3:
+        if st.button("🧹 Clear ChromaDB", key="settings_clear_chromadb", type="secondary"):
+            st.warning("⚠️ This will clear all document embeddings from ChromaDB. You'll need to reload your documents after this.")
+            
+            if st.button("✅ Confirm Clear ChromaDB", key="settings_confirm_clear"):
+                with st.spinner("Clearing ChromaDB..."):
+                    try:
+                        # Import the reset function from reset.py
+                        import sys
+                        import os
+                        sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+                        from reset import reset_chroma_database
+                        
+                        success, message = reset_chroma_database()
+                        
+                        if success:
+                            st.success(f"✅ {message}")
+                            st.info("💡 Now reload your documents from the Space Management section above.")
+                        else:
+                            st.error(f"❌ {message}")
+                    except Exception as e:
+                        st.error(f"❌ Error clearing ChromaDB: {str(e)}")
+                    
+                    # Force a rerun to update the document count
+                    st.rerun()
+    
+    with col4:
+        st.markdown("**When to use Clear ChromaDB:**")
+        st.markdown("- Document count is much higher than expected")
+        st.markdown("- Seeing duplicate documents in search results")
+        st.markdown("- False duplicate detection results")
+        st.markdown("- After multiple scans without clearing first")
+    
     st.markdown("---")
     
     # Simple debug info
-    with st.expander("� Debug Information"):
+    with st.expander("🔍 Debug Information"):
         st.markdown("### Session Info")
+        
+        # Safely handle potentially None values
+        available_spaces = st.session_state.get("available_spaces", [])
+        available_spaces_count = len(available_spaces) if available_spaces is not None else 0
+        
+        selected_spaces = st.session_state.get("selected_spaces", [])
+        selected_spaces_safe = selected_spaces if selected_spaces is not None else []
+        
         st.json({
             "page": st.session_state.get("page"),
             "platform": st.session_state.get("platform"),
-            "selected_spaces": st.session_state.get("selected_spaces"),
-            "available_spaces_count": len(st.session_state.get("available_spaces", []))
+            "selected_spaces": selected_spaces_safe,
+            "available_spaces_count": available_spaces_count
         })
     
     # Navigation
