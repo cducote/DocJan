@@ -152,15 +152,15 @@ def render_spaces_page():
         st.metric("Selected Spaces", len(st.session_state.selected_spaces))
         
         # Space types breakdown
-        if available_spaces:
-            space_types = {}
-            for space in available_spaces:
-                space_type = space.get('type', 'unknown')
-                space_types[space_type] = space_types.get(space_type, 0) + 1
+        # if available_spaces:
+        #     space_types = {}
+        #     for space in available_spaces:
+        #         space_type = space.get('type', 'unknown')
+        #         space_types[space_type] = space_types.get(space_type, 0) + 1
             
-            st.markdown("### Space Types")
-            for space_type, count in space_types.items():
-                st.markdown(f"- {space_type.title()}: {count}")
+        #     st.markdown("### Space Types")
+        #     for space_type, count in space_types.items():
+        #         st.markdown(f"- {space_type.title()}: {count}")
     
     # Detailed space information
     if available_spaces:
@@ -186,184 +186,184 @@ def render_spaces_page():
         st.dataframe(df, use_container_width=True, hide_index=True)
     
     # Show detected duplicates for selected spaces
-    if st.session_state.selected_spaces:
-        st.markdown("---")
+    # if st.session_state.selected_spaces:
+    #     st.markdown("---")
         
-        # Dynamic title and filter options based on number of spaces selected
-        if len(st.session_state.selected_spaces) > 1:
-            st.markdown("### 🔍 Detected Duplicates")
+    #     # Dynamic title and filter options based on number of spaces selected
+    #     if len(st.session_state.selected_spaces) > 1:
+    #         st.markdown("### 🔍 Detected Duplicates")
             
-            # Add filter options when multiple spaces are selected
-            col_filter1, col_filter2 = st.columns([2, 1])
+    #         # Add filter options when multiple spaces are selected
+    #         col_filter1, col_filter2 = st.columns([2, 1])
             
-            with col_filter1:
-                duplicate_filter = st.selectbox(
-                    "Show duplicates:",
-                    options=["All duplicates", "Cross-space only", "Within-space only"],
-                    index=0,  # Default to showing all
-                    help="Choose which type of duplicates to display",
-                    key="spaces_duplicate_filter"
-                )
+    #         with col_filter1:
+    #             duplicate_filter = st.selectbox(
+    #                 "Show duplicates:",
+    #                 options=["All duplicates", "Cross-space only", "Within-space only"],
+    #                 index=0,  # Default to showing all
+    #                 help="Choose which type of duplicates to display",
+    #                 key="spaces_duplicate_filter"
+    #             )
             
-            with col_filter2:
-                st.markdown("") # Spacer
-                st.markdown(f"**{len(st.session_state.selected_spaces)} spaces selected**")
+    #         with col_filter2:
+    #             st.markdown("") # Spacer
+    #             st.markdown(f"**{len(st.session_state.selected_spaces)} spaces selected**")
             
-            # Determine cross_space_only parameter based on filter
-            if duplicate_filter == "Cross-space only":
-                cross_space_only = True
-                within_space_only = False
-                st.markdown("*Showing only duplicates between different spaces*")
-            elif duplicate_filter == "Within-space only":
-                cross_space_only = False
-                within_space_only = True
-                st.markdown("*Showing only duplicates within the same space*")
-            else:  # "All duplicates"
-                cross_space_only = False
-                within_space_only = False
-                st.markdown("*Showing all duplicates (both cross-space and within-space)*")
-        else:
-            st.markdown("### 🔍 Detected Duplicates")
-            st.markdown("*Showing all duplicates within the selected space*")
-            cross_space_only = False
-            within_space_only = False
+    #         # Determine cross_space_only parameter based on filter
+    #         if duplicate_filter == "Cross-space only":
+    #             cross_space_only = True
+    #             within_space_only = False
+    #             st.markdown("*Showing only duplicates between different spaces*")
+    #         elif duplicate_filter == "Within-space only":
+    #             cross_space_only = False
+    #             within_space_only = True
+    #             st.markdown("*Showing only duplicates within the same space*")
+    #         else:  # "All duplicates"
+    #             cross_space_only = False
+    #             within_space_only = False
+    #             st.markdown("*Showing all duplicates (both cross-space and within-space)*")
+    #     else:
+    #         st.markdown("### 🔍 Detected Duplicates")
+    #         st.markdown("*Showing all duplicates within the selected space*")
+    #         cross_space_only = False
+    #         within_space_only = False
         
-        with st.spinner("Loading duplicates for selected spaces..."):
-            # Get duplicates filtered by selected spaces and filter type
-            duplicate_pairs = get_detected_duplicates(
-                space_filter=st.session_state.selected_spaces, 
-                cross_space_only=cross_space_only,
-                within_space_only=within_space_only
-            )
+    #     with st.spinner("Loading duplicates for selected spaces..."):
+    #         # Get duplicates filtered by selected spaces and filter type
+    #         duplicate_pairs = get_detected_duplicates(
+    #             space_filter=st.session_state.selected_spaces, 
+    #             cross_space_only=cross_space_only,
+    #             within_space_only=within_space_only
+    #         )
         
-        if duplicate_pairs:
-            # Show appropriate success message based on filtering
-            if len(st.session_state.selected_spaces) > 1:
-                if duplicate_filter == "Cross-space only":
-                    st.success(f"Found {len(duplicate_pairs)} cross-space duplicate pairs between selected spaces")
-                elif duplicate_filter == "Within-space only":
-                    st.success(f"Found {len(duplicate_pairs)} within-space duplicate pairs in selected spaces")  
-                else:
-                    st.success(f"Found {len(duplicate_pairs)} duplicate pairs in selected spaces (cross-space and within-space)")
-            else:
-                st.success(f"Found {len(duplicate_pairs)} duplicate pairs in selected space")
+    #     if duplicate_pairs:
+    #         # Show appropriate success message based on filtering
+    #         if len(st.session_state.selected_spaces) > 1:
+    #             if duplicate_filter == "Cross-space only":
+    #                 st.success(f"Found {len(duplicate_pairs)} cross-space duplicate pairs between selected spaces")
+    #             elif duplicate_filter == "Within-space only":
+    #                 st.success(f"Found {len(duplicate_pairs)} within-space duplicate pairs in selected spaces")  
+    #             else:
+    #                 st.success(f"Found {len(duplicate_pairs)} duplicate pairs in selected spaces (cross-space and within-space)")
+    #         else:
+    #             st.success(f"Found {len(duplicate_pairs)} duplicate pairs in selected space")
             
-            # Create tabs for different views
-            tab1, tab2 = st.tabs(["📋 Summary View", "📊 Detailed View"])
+    #         # Create tabs for different views
+    #         tab1, tab2 = st.tabs(["📋 Summary View", "📊 Detailed View"])
             
-            with tab1:
-                # Summary cards
-                for i, pair in enumerate(duplicate_pairs):
-                    with st.container():
-                        st.markdown(f"**Duplicate Pair {i+1}**")
+    #         with tab1:
+    #             # Summary cards
+    #             for i, pair in enumerate(duplicate_pairs):
+    #                 with st.container():
+    #                     st.markdown(f"**Duplicate Pair {i+1}**")
                         
-                        # Create columns for the two documents
-                        col_a, col_b, col_actions = st.columns([3, 3, 2])
+    #                     # Create columns for the two documents
+    #                     col_a, col_b, col_actions = st.columns([3, 3, 2])
                         
-                        with col_a:
-                            st.markdown(f"📄 **{pair['main_title']}**")
-                            st.markdown(f"🌐 Space: **{pair['main_space_name']}**")
-                            if pair['main_doc'].metadata.get('source'):
-                                st.markdown(f"🔗 [View Page]({pair['main_doc'].metadata['source']})")
+    #                     with col_a:
+    #                         st.markdown(f"📄 **{pair['main_title']}**")
+    #                         st.markdown(f"🌐 Space: **{pair['main_space_name']}**")
+    #                         if pair['main_doc'].metadata.get('source'):
+    #                             st.markdown(f"🔗 [View Page]({pair['main_doc'].metadata['source']})")
                         
-                        with col_b:
-                            st.markdown(f"📄 **{pair['similar_title']}**")
-                            st.markdown(f"🌐 Space: **{pair['similar_space_name']}**")
-                            if pair['similar_doc'].metadata.get('source'):
-                                st.markdown(f"🔗 [View Page]({pair['similar_doc'].metadata['source']})")
+    #                     with col_b:
+    #                         st.markdown(f"📄 **{pair['similar_title']}**")
+    #                         st.markdown(f"🌐 Space: **{pair['similar_space_name']}**")
+    #                         if pair['similar_doc'].metadata.get('source'):
+    #                             st.markdown(f"🔗 [View Page]({pair['similar_doc'].metadata['source']})")
                         
-                        with col_actions:
-                            # Add similarity meter
-                            render_similarity_meter(pair['similarity_score'])
+    #                     with col_actions:
+    #                         # Add similarity meter
+    #                         render_similarity_meter(pair['similarity_score'])
                             
-                            # Determine if this is cross-space or within-space
-                            if pair['main_space'] != pair['similar_space']:
-                                st.markdown("🔄 **Cross-Space**")
-                            else:
-                                st.markdown("📁 **Within-Space**")
+    #                         # Determine if this is cross-space or within-space
+    #                         if pair['main_space'] != pair['similar_space']:
+    #                             st.markdown("🔄 **Cross-Space**")
+    #                         else:
+    #                             st.markdown("📁 **Within-Space**")
                             
-                            # Merge button
-                            if st.button(f"🔀 Merge", key=f"spaces_merge_{i}"):
-                                st.session_state.merge_docs = {
-                                    "main_doc": pair['main_doc'],
-                                    "similar_doc": pair['similar_doc'],
-                                    "similarity": pair['similarity_score']
-                                }
-                                st.session_state.page = 'merge'
-                                st.rerun()
+    #                         # Merge button
+    #                         if st.button(f"🔀 Merge", key=f"spaces_merge_{i}"):
+    #                             st.session_state.merge_docs = {
+    #                                 "main_doc": pair['main_doc'],
+    #                                 "similar_doc": pair['similar_doc'],
+    #                                 "similarity": pair['similarity_score']
+    #                             }
+    #                             st.session_state.page = 'merge'
+    #                             st.rerun()
                         
-                        st.markdown("---")
+    #                     st.markdown("---")
             
-            with tab2:
-                # Detailed view with full content preview
-                for i, pair in enumerate(duplicate_pairs):
-                    with st.expander(f"📋 Pair {i+1}: {pair['main_title']} ↔ {pair['similar_title']}"):
+    #         with tab2:
+    #             # Detailed view with full content preview
+    #             for i, pair in enumerate(duplicate_pairs):
+    #                 with st.expander(f"📋 Pair {i+1}: {pair['main_title']} ↔ {pair['similar_title']}"):
                         
-                        # Space information
-                        col_space1, col_space2 = st.columns(2)
-                        with col_space1:
-                            st.markdown(f"**Space:** **{pair['main_space_name']}**")
-                        with col_space2:
-                            st.markdown(f"**Space:** **{pair['similar_space_name']}**")
+    #                     # Space information
+    #                     col_space1, col_space2 = st.columns(2)
+    #                     with col_space1:
+    #                         st.markdown(f"**Space:** **{pair['main_space_name']}**")
+    #                     with col_space2:
+    #                         st.markdown(f"**Space:** **{pair['similar_space_name']}**")
                         
-                        # Content preview
-                        col_content1, col_content2 = st.columns(2)
+    #                     # Content preview
+    #                     col_content1, col_content2 = st.columns(2)
                         
-                        with col_content1:
-                            st.markdown(f"**{pair['main_title']}**")
-                            content_preview = pair['main_doc'].page_content[:300] + "..." if len(pair['main_doc'].page_content) > 300 else pair['main_doc'].page_content
-                            st.markdown(f"```\n{content_preview}\n```")
-                            if pair['main_doc'].metadata.get('source'):
-                                st.markdown(f"🔗 [View Full Page]({pair['main_doc'].metadata['source']})")
+    #                     with col_content1:
+    #                         st.markdown(f"**{pair['main_title']}**")
+    #                         content_preview = pair['main_doc'].page_content[:300] + "..." if len(pair['main_doc'].page_content) > 300 else pair['main_doc'].page_content
+    #                         st.markdown(f"```\n{content_preview}\n```")
+    #                         if pair['main_doc'].metadata.get('source'):
+    #                             st.markdown(f"🔗 [View Full Page]({pair['main_doc'].metadata['source']})")
                         
-                        with col_content2:
-                            st.markdown(f"**{pair['similar_title']}**")
-                            content_preview = pair['similar_doc'].page_content[:300] + "..." if len(pair['similar_doc'].page_content) > 300 else pair['similar_doc'].page_content
-                            st.markdown(f"```\n{content_preview}\n```")
-                            if pair['similar_doc'].metadata.get('source'):
-                                st.markdown(f"🔗 [View Full Page]({pair['similar_doc'].metadata['source']})")
+    #                     with col_content2:
+    #                         st.markdown(f"**{pair['similar_title']}**")
+    #                         content_preview = pair['similar_doc'].page_content[:300] + "..." if len(pair['similar_doc'].page_content) > 300 else pair['similar_doc'].page_content
+    #                         st.markdown(f"```\n{content_preview}\n```")
+    #                         if pair['similar_doc'].metadata.get('source'):
+    #                             st.markdown(f"🔗 [View Full Page]({pair['similar_doc'].metadata['source']})")
                         
-                        # Action buttons
-                        st.markdown("**Actions:**")
-                        col_action1, col_action2 = st.columns(2)
-                        with col_action1:
-                            if st.button(f"🔀 Merge Documents", key=f"spaces_merge_detail_{i}"):
-                                st.session_state.merge_docs = {
-                                    "main_doc": pair['main_doc'],
-                                    "similar_doc": pair['similar_doc'],
-                                    "similarity": pair['similarity_score']
-                                }
-                                st.session_state.page = 'merge'
-                                st.rerun()
-                        with col_action2:
-                            # Add similarity meter in detailed view too
-                            render_similarity_meter(pair['similarity_score'])
-        else:
-            if len(st.session_state.selected_spaces) > 1:
-                if duplicate_filter == "Cross-space only":
-                    st.info("No cross-space duplicates found between the selected spaces. This could mean:")
-                    st.markdown("- No duplicate content exists **between** these spaces")
-                    st.markdown("- Documents haven't been analyzed yet")
-                    st.markdown("- The similarity threshold may be too high")
-                    st.markdown("- Only within-space duplicates exist (try changing the filter)")
-                elif duplicate_filter == "Within-space only":
-                    st.info("No within-space duplicates found in the selected spaces. This could mean:")
-                    st.markdown("- No duplicate content exists **within** each individual space")
-                    st.markdown("- Documents haven't been analyzed yet")
-                    st.markdown("- The similarity threshold may be too high")
-                    st.markdown("- Only cross-space duplicates exist (try changing the filter)")
-                else:
-                    st.info("No duplicates found in the selected spaces. This could mean:")
-                    st.markdown("- No duplicate content exists in these spaces")
-                    st.markdown("- Documents haven't been analyzed yet")
-                    st.markdown("- The similarity threshold may be too high")
-            else:
-                st.info("No duplicates found in the selected space. This could mean:")
-                st.markdown("- No duplicate content exists in this space")
-                st.markdown("- Documents haven't been analyzed yet")
-                st.markdown("- The similarity threshold may be too high")
+    #                     # Action buttons
+    #                     st.markdown("**Actions:**")
+    #                     col_action1, col_action2 = st.columns(2)
+    #                     with col_action1:
+    #                         if st.button(f"🔀 Merge Documents", key=f"spaces_merge_detail_{i}"):
+    #                             st.session_state.merge_docs = {
+    #                                 "main_doc": pair['main_doc'],
+    #                                 "similar_doc": pair['similar_doc'],
+    #                                 "similarity": pair['similarity_score']
+    #                             }
+    #                             st.session_state.page = 'merge'
+    #                             st.rerun()
+    #                     with col_action2:
+    #                         # Add similarity meter in detailed view too
+    #                         render_similarity_meter(pair['similarity_score'])
+    #     else:
+    #         if len(st.session_state.selected_spaces) > 1:
+    #             if duplicate_filter == "Cross-space only":
+    #                 st.info("No cross-space duplicates found between the selected spaces. This could mean:")
+    #                 st.markdown("- No duplicate content exists **between** these spaces")
+    #                 st.markdown("- Documents haven't been analyzed yet")
+    #                 st.markdown("- The similarity threshold may be too high")
+    #                 st.markdown("- Only within-space duplicates exist (try changing the filter)")
+    #             elif duplicate_filter == "Within-space only":
+    #                 st.info("No within-space duplicates found in the selected spaces. This could mean:")
+    #                 st.markdown("- No duplicate content exists **within** each individual space")
+    #                 st.markdown("- Documents haven't been analyzed yet")
+    #                 st.markdown("- The similarity threshold may be too high")
+    #                 st.markdown("- Only cross-space duplicates exist (try changing the filter)")
+    #             else:
+    #                 st.info("No duplicates found in the selected spaces. This could mean:")
+    #                 st.markdown("- No duplicate content exists in these spaces")
+    #                 st.markdown("- Documents haven't been analyzed yet")
+    #                 st.markdown("- The similarity threshold may be too high")
+    #         else:
+    #             st.info("No duplicates found in the selected space. This could mean:")
+    #             st.markdown("- No duplicate content exists in this space")
+    #             st.markdown("- Documents haven't been analyzed yet")
+    #             st.markdown("- The similarity threshold may be too high")
             
-            st.markdown("**Try:**")
-            st.markdown("- Loading documents using the **📥 Load Documents** button above")
-            st.markdown("- Running a duplicate scan from the **⚙️ Settings** page")
-            st.markdown("- Checking different spaces or adjusting filters")
+    #         st.markdown("**Try:**")
+    #         st.markdown("- Loading documents using the **📥 Load Documents** button above")
+    #         st.markdown("- Running a duplicate scan from the **⚙️ Settings** page")
+    #         st.markdown("- Checking different spaces or adjusting filters")

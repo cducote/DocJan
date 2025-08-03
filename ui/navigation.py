@@ -30,7 +30,8 @@ def render_sidebar():
     Render the sidebar navigation menu
     """
     with st.sidebar:
-        st.title("Concatly")
+        # Display logo instead of text title
+        st.image("clogo.png", width=200)
         
         # Platform Selection
         st.markdown("### Platform")

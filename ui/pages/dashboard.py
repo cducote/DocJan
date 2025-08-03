@@ -103,57 +103,6 @@ def render_confluence_dashboard():
         docs_with_duplicates = len(duplicate_pairs) * 2 if 'duplicate_pairs' in locals() else 0  # Each pair involves 2 docs
         st.metric("Documents with Duplicates", docs_with_duplicates)
     
-    # Maintenance section
-    st.markdown("---")
-    st.markdown("## 🔧 Maintenance")
-    
-    maint_col1, maint_col2 = st.columns(2)
-    
-    with maint_col1:
-        st.markdown("### 🔍 Duplicate Detection")
-        st.markdown("Manually scan all documents to find new duplicate pairs. This is useful after undoing merges or when new content is added.")
-        
-        if st.button("🔄 Scan for Duplicates", use_container_width=True, key="dashboard_scan_duplicates", help="Re-scan all documents for duplicate pairs"):
-            with st.spinner("Scanning documents for duplicates..."):
-                from models.database import scan_for_duplicates
-                scan_result = scan_for_duplicates(similarity_threshold=0.65, update_existing=True)
-                
-                if scan_result['success']:
-                    if scan_result['pairs_found'] > 0:
-                        st.success(f"✅ Scan completed! Found {scan_result['pairs_found']} duplicate pairs and updated {scan_result['documents_updated']} documents.")
-                        # Refresh the page to show new duplicates
-                        time.sleep(1)
-                        st.rerun()
-                    else:
-                        st.info("✅ Scan completed. No duplicate pairs found.")
-                else:
-                    st.error(f"❌ Scan failed: {scan_result['message']}")
-    
-    with maint_col2:
-        st.markdown("### ⚙️ Advanced Settings")
-        st.markdown("Advanced maintenance and configuration options.")
-        
-        # Show last scan info if available
-        try:
-            all_docs = db.get()
-            if all_docs['metadatas']:
-                last_scan_times = []
-                for metadata in all_docs['metadatas']:
-                    last_scan = metadata.get('last_similarity_scan')
-                    if last_scan:
-                        last_scan_times.append(last_scan)
-                
-                if last_scan_times:
-                    # Get the most recent scan time
-                    most_recent_scan = max(last_scan_times)
-                    from utils.helpers import format_timestamp_to_est
-                    formatted_time = format_timestamp_to_est(most_recent_scan)
-                    st.info(f"Last duplicate scan: {formatted_time}")
-                else:
-                    st.info("No previous duplicate scans found")
-        except Exception as e:
-            st.info("Could not retrieve scan history")
-    
     with stat_col4:
         # Calculate potential space saved (placeholder)
         st.metric("Potential Merges", len(duplicate_pairs) if 'duplicate_pairs' in locals() else 0)
