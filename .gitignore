@@ -71,3 +71,10 @@ logs/
 *.tmp
 *.temp
 .user_profiles.json
+
+# Backup files
+*_backup.py
+*_old_backup.py
+app_backup*
+*.backup
+*.bak
