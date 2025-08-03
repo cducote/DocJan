@@ -4,6 +4,15 @@ Concatly - Confluence Duplicate Manager
 This is the main entry point for the Concatly application,
 which helps manage and merge duplicate content in Confluence.
 """
+
+# Fix for SQLite3 version compatibility on cloud platforms
+try:
+    import pysqlite3
+    import sys
+    sys.modules['sqlite3'] = pysqlite3
+except ImportError:
+    pass
+
 import streamlit as st
 import os
 from config.settings import validate_config

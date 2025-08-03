@@ -1,5 +1,13 @@
 # seed.py - Script to populate Confluence spaces with mock documents for duplicate testing
 
+# Fix for SQLite3 version compatibility on cloud platforms
+try:
+    import pysqlite3
+    import sys
+    sys.modules['sqlite3'] = pysqlite3
+except ImportError:
+    pass
+
 from atlassian import Confluence
 from dotenv import load_dotenv
 import os
