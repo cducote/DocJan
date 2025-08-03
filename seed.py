@@ -740,10 +740,15 @@ def create_page(space_key, title, content):
     """Create a page in Confluence"""
     try:
         # Check if page already exists
-        existing_page = confluence.get_page_by_title(space_key, title)
-        if existing_page:
-            print(f">> Page '{title}' already exists in {space_key}. Skipping...")
-            return False
+        try:
+            existing_page = confluence.get_page_by_title(space_key, title)
+            if existing_page:
+                print(f">> Page '{title}' already exists in {space_key}. Skipping...")
+                return False
+        except Exception as e:
+            # Page doesn't exist (get_page_by_title raises exception if not found)
+            # This is expected after a reset, so we'll proceed to create the page
+            print(f">> Page '{title}' not found in {space_key} (expected after reset), creating new page...")
         
         # Create the page
         page = confluence.create_page(

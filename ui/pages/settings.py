@@ -171,13 +171,47 @@ def render_settings():
                     
                     # Force a rerun to update the document count
                     st.rerun()
+        
+        # Add orphan cleanup button
+        if st.button("🗑️ Clean Orphaned Records", key="settings_clean_orphans", type="secondary"):
+            st.warning("⚠️ This will remove ChromaDB records that reference deleted Confluence pages.")
+            
+            if st.button("✅ Confirm Clean Orphans", key="settings_confirm_clean_orphans"):
+                with st.spinner("Cleaning orphaned records..."):
+                    try:
+                        # Import cleanup function
+                        from confluence.api import cleanup_orphaned_chroma_records
+                        
+                        success, message, cleaned_count = cleanup_orphaned_chroma_records()
+                        
+                        if success:
+                            st.success(f"✅ {message}")
+                            if cleaned_count > 0:
+                                st.info(f"🧹 Cleaned up {cleaned_count} orphaned records")
+                            else:
+                                st.info("✨ No orphaned records found - database is clean!")
+                        else:
+                            st.error(f"❌ {message}")
+                    except Exception as e:
+                        st.error(f"❌ Error cleaning orphaned records: {str(e)}")
+                    
+                    # Force a rerun to update the document count
+                    st.rerun()
     
     with col4:
+        st.markdown("**Database Cleanup Options:**")
+        st.markdown("**Clear ChromaDB:** Complete reset - removes ALL documents")
+        st.markdown("**Clean Orphaned Records:** Smart cleanup - only removes records for deleted Confluence pages")
+        st.markdown("")
+        st.markdown("**When to use Clean Orphaned Records:**")
+        st.markdown("- Seeing old/deleted pages in duplicate detection")
+        st.markdown("- Document count higher than expected")
+        st.markdown("- After deleting pages in Confluence")
+        st.markdown("")
         st.markdown("**When to use Clear ChromaDB:**")
-        st.markdown("- Document count is much higher than expected")
-        st.markdown("- Seeing duplicate documents in search results")
-        st.markdown("- False duplicate detection results")
-        st.markdown("- After multiple scans without clearing first")
+        st.markdown("- Starting fresh with new embeddings")
+        st.markdown("- Major issues with duplicate detection")
+        st.markdown("- After changing embedding models")
     
     st.markdown("---")
     

@@ -203,6 +203,80 @@ def apply_merge_to_confluence(main_doc, similar_doc, merged_content, keep_main=T
     except Exception as e:
         return False, f"Error applying merge: {str(e)}"
 
+
+def cleanup_orphaned_chroma_records():
+    """Remove ChromaDB records that reference deleted Confluence pages"""
+    try:
+        from models.database import get_document_database
+        import requests
+        
+        # Get database and all current records
+        db = get_document_database()
+        all_docs = db.get()
+        
+        if not all_docs['documents']:
+            return True, "No documents in ChromaDB to check", 0
+        
+        print(f"DEBUG: Checking {len(all_docs['documents'])} ChromaDB records for orphaned entries...")
+        
+        orphaned_ids = []
+        checked_count = 0
+        
+        for i, metadata in enumerate(all_docs['metadatas']):
+            doc_id = all_docs['ids'][i]
+            title = metadata.get('title', 'Unknown')
+            source_url = metadata.get('source', '')
+            
+            # Extract page ID from the source URL or doc_id
+            page_id = None
+            if source_url:
+                page_id = extract_page_id_from_url(source_url)
+            elif doc_id.startswith('page_'):
+                page_id = doc_id[5:]  # Remove 'page_' prefix
+            
+            if page_id:
+                # Check if the page still exists in Confluence
+                try:
+                    check_url = f"{get_confluence_base_url()}/rest/api/content/{page_id}"
+                    response = requests.get(check_url, auth=get_confluence_auth())
+                    
+                    if response.status_code == 404:
+                        # Page no longer exists - mark for deletion
+                        orphaned_ids.append(doc_id)
+                        print(f"DEBUG: Found orphaned record: '{title}' (page_id: {page_id})")
+                    elif response.status_code == 200:
+                        # Page exists - check if it's trashed
+                        page_data = response.json()
+                        if page_data.get('status') == 'trashed':
+                            orphaned_ids.append(doc_id)
+                            print(f"DEBUG: Found trashed page record: '{title}' (page_id: {page_id})")
+                    # For other status codes (403, 500, etc.), assume the page exists but we can't access it
+                    
+                    checked_count += 1
+                    
+                except Exception as e:
+                    print(f"DEBUG: Error checking page {page_id}: {e}")
+                    # On error, don't delete - assume page exists
+                    continue
+            else:
+                # No page ID found - this might be a seeded document with doc_ prefix
+                # These are usually fine to keep
+                continue
+        
+        # Remove orphaned records
+        if orphaned_ids:
+            print(f"DEBUG: Removing {len(orphaned_ids)} orphaned records from ChromaDB...")
+            db.delete(orphaned_ids)
+            
+            return True, f"Successfully checked {checked_count} records and cleaned orphaned entries", len(orphaned_ids)
+        else:
+            return True, f"Checked {checked_count} records - no orphaned entries found", 0
+            
+    except Exception as e:
+        print(f"DEBUG: Error during orphan cleanup: {e}")
+        return False, f"Error cleaning orphaned records: {str(e)}", 0
+
+
 def load_documents_from_spaces(space_keys, limit_per_space=50):
     """Load documents from specified Confluence spaces into ChromaDB
     

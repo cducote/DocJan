@@ -61,8 +61,29 @@ def render_duplicates_page():
 
 def render_confluence_duplicates():
     """Render Confluence-specific duplicates"""
-    # Get detected duplicates
-    duplicate_pairs = get_detected_duplicates(space_keys=st.session_state.selected_spaces)
+    # Show loading spinner
+    with st.spinner("Loading Confluence duplicates..."):
+        # Add basic caching for Confluence duplicates too
+        confluence_cache_key = f"confluence_duplicates_{'-'.join(st.session_state.get('selected_spaces', ['SD']))}"
+        
+        if confluence_cache_key not in st.session_state:
+            # Get detected duplicates
+            duplicate_pairs = get_detected_duplicates(space_keys=st.session_state.selected_spaces)
+            st.session_state[confluence_cache_key] = duplicate_pairs
+        else:
+            duplicate_pairs = st.session_state[confluence_cache_key]
+    
+    # Add refresh button
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        st.info(f"Found {len(duplicate_pairs)} potential duplicate pairs.")
+    with col2:
+        if st.button("🔄 Refresh", key="refresh_confluence"):
+            # Clear cache when refresh is clicked
+            keys_to_remove = [key for key in st.session_state.keys() if key.startswith("confluence_duplicates_")]
+            for key in keys_to_remove:
+                del st.session_state[key]
+            st.rerun()
     
     # Show filters
     col1, col2 = st.columns([1, 3])
@@ -88,8 +109,8 @@ def render_confluence_duplicates():
 
     render_duplicate_pairs(filtered_pairs, platform="confluence")
 
-def render_sharepoint_duplicates():
-    """Render SharePoint-specific duplicates"""
+def load_sharepoint_duplicates():
+    """Load SharePoint documents and calculate duplicates (with error handling)"""
     try:
         from sharepoint.api import SharePointAPI
         sharepoint_api = SharePointAPI()
@@ -98,41 +119,96 @@ def render_sharepoint_duplicates():
         documents = sharepoint_api.get_documents("Concatly_Test_Documents")
         
         if not documents:
-            st.info("No SharePoint documents found. Upload some documents to see duplicates.")
-            return
-        
-        st.info(f"Found {len(documents)} SharePoint documents to analyze for duplicates.")
+            return {
+                "documents": [],
+                "duplicate_pairs": [],
+                "error": None
+            }
         
         # Enhanced duplicate detection based on document names and content patterns
         duplicate_pairs = []
         
-        # More sophisticated similarity detection
-        for i, doc1 in enumerate(documents):
-            for j, doc2 in enumerate(documents[i+1:], i+1):
-                similarity_score = calculate_sharepoint_similarity(doc1, doc2)
-                
-                if similarity_score > 0.2:  # Lower threshold to catch more potential duplicates
-                    duplicate_pairs.append({
-                        "doc1": {
-                            "metadata": {
-                                "title": doc1['name'], 
-                                "source": doc1.get('webUrl', '#'), 
-                                "platform": "sharepoint"
-                            }, 
-                            "id": doc1['id']
-                        },
-                        "doc2": {
-                            "metadata": {
-                                "title": doc2['name'], 
-                                "source": doc2.get('webUrl', '#'), 
-                                "platform": "sharepoint"
-                            }, 
-                            "id": doc2['id']
-                        },
-                        "similarity": similarity_score
-                    })
+        # Optimized similarity detection - only process if we have enough documents
+        if len(documents) >= 2:
+            for i, doc1 in enumerate(documents):
+                for j, doc2 in enumerate(documents[i+1:], i+1):
+                    similarity_score = calculate_sharepoint_similarity(doc1, doc2)
+                    
+                    # Only add pairs above threshold to reduce processing
+                    if similarity_score > 0.2:  # Lower threshold to catch more potential duplicates
+                        duplicate_pairs.append({
+                            "doc1": {
+                                "metadata": {
+                                    "title": doc1['name'], 
+                                    "source": doc1.get('webUrl', '#'), 
+                                    "platform": "sharepoint"
+                                }, 
+                                "id": doc1['id']
+                            },
+                            "doc2": {
+                                "metadata": {
+                                    "title": doc2['name'], 
+                                    "source": doc2.get('webUrl', '#'), 
+                                    "platform": "sharepoint"
+                                }, 
+                                "id": doc2['id']
+                            },
+                            "similarity": similarity_score
+                        })
         
-        st.info(f"Found {len(duplicate_pairs)} potential duplicate pairs before filtering.")
+        return {
+            "documents": documents,
+            "duplicate_pairs": duplicate_pairs,
+            "error": None
+        }
+        
+    except Exception as e:
+        return {
+            "documents": [],
+            "duplicate_pairs": [],
+            "error": str(e)
+        }
+
+def render_sharepoint_duplicates():
+    """Render SharePoint-specific duplicates"""
+    # Use session state for caching
+    cache_key = "sharepoint_duplicates_cache"
+    
+    # Check if we have cached data
+    if cache_key not in st.session_state:
+        with st.spinner("Loading SharePoint documents and analyzing duplicates..."):
+            st.session_state[cache_key] = load_sharepoint_duplicates()
+    
+    # Get cached data
+    cached_data = st.session_state[cache_key]
+    
+    if cached_data["error"]:
+        st.error(f"Error loading SharePoint duplicates: {cached_data['error']}")
+        st.info("Make sure SharePoint is properly configured and accessible.")
+        # Add refresh button
+        if st.button("🔄 Retry", key="retry_sharepoint"):
+            del st.session_state[cache_key]
+            st.rerun()
+        return
+    
+    documents = cached_data["documents"]
+    duplicate_pairs = cached_data["duplicate_pairs"]
+    
+    if not documents:
+        st.info("No SharePoint documents found. Upload some documents to see duplicates.")
+        if st.button("🔄 Refresh", key="refresh_sharepoint"):
+            del st.session_state[cache_key]
+            st.rerun()
+        return
+    
+    # Add refresh button for manual cache clearing
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        st.info(f"Found {len(documents)} SharePoint documents. Analyzed {len(duplicate_pairs)} potential duplicate pairs.")
+    with col2:
+        if st.button("🔄 Refresh Data", key="refresh_sp_data"):
+            del st.session_state[cache_key]
+            st.rerun()
         
         # Show filters
         col1, col2 = st.columns([1, 3])
@@ -172,10 +248,6 @@ def render_sharepoint_duplicates():
             return
 
         render_duplicate_pairs(filtered_pairs, platform="sharepoint")
-        
-    except Exception as e:
-        st.error(f"Error loading SharePoint duplicates: {e}")
-        st.info("Make sure SharePoint is properly configured and accessible.")
 
 def calculate_sharepoint_similarity(doc1, doc2):
     """Calculate similarity between two SharePoint documents"""

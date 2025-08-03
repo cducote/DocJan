@@ -46,6 +46,8 @@ def render_sidebar():
         # Update platform if changed
         if platform != st.session_state.platform:
             st.session_state.platform = platform
+            # Reset background loading when platform changes
+            st.session_state.background_loading_started = False
             st.rerun()
         
         st.markdown("### Menu")
