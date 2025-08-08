@@ -95,3 +95,13 @@ logs/
 app_backup*
 *.backup
 *.bak
+
+# Old/legacy files (Streamlit and deprecated code)
+*_old.py
+*_old/
+.streamlit_old/
+ui_old/
+main_old.py
+debug_duplicates_old.py
+simple_api_server_old.py
+api_server_old.py

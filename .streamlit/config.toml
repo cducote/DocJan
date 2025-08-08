@@ -1,8 +1,0 @@
-# Streamlit configuration for hosting
-[server]
-port = 8501
-enableCORS = false
-enableXsrfProtection = false
-
-[browser]
-gatherUsageStats = false
