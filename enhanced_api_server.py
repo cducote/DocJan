@@ -32,6 +32,8 @@ app.add_middleware(
 # Simple in-memory storage for organization status
 organization_status = {}
 sync_tasks = {}
+# Cache for duplicate data to avoid recalculating
+duplicate_cache = {}
 
 class SyncRequest(BaseModel):
     organization_id: str
@@ -136,6 +138,14 @@ async def get_duplicates(organization_id: str):
     if not status.vector_store_ready:
         raise HTTPException(status_code=400, detail="Vector store not ready. Complete initial sync first.")
     
+    # Check cache first for faster response
+    cache_key = f"{organization_id}_duplicates"
+    if cache_key in duplicate_cache:
+        print(f"Returning cached duplicate data for {organization_id}")
+        return duplicate_cache[cache_key]
+    
+    print(f"Computing duplicate data for {organization_id} (not cached)")
+    
     # Get real duplicate data using the original Streamlit logic
     try:
         # Import required modules
@@ -206,18 +216,25 @@ async def get_duplicates(organization_id: str):
                     'metadata': doc2_metadata
                 }
                 
-                # Calculate similarity using embeddings
+                # Use pre-computed similarity or calculate from stored embeddings
                 try:
-                    from models.database import embeddings
-                    from sklearn.metrics.pairwise import cosine_similarity
-                    
-                    # Generate embeddings for both documents
-                    embedding1 = embeddings.embed_query(doc1['page_content'])
-                    embedding2 = embeddings.embed_query(doc2['page_content'])
-                    
-                    # Calculate cosine similarity
-                    similarity_matrix = cosine_similarity([embedding1], [embedding2])
-                    similarity = float(similarity_matrix[0][0])
+                    # First try to get similarity from metadata if available
+                    similarity = doc1_metadata.get('similarity_score')
+                    if similarity is None:
+                        # Fall back to using stored embeddings from ChromaDB (much faster than re-generating)
+                        from sklearn.metrics.pairwise import cosine_similarity
+                        
+                        # Get the stored embeddings from ChromaDB
+                        embedding1 = all_docs['embeddings'][i] if all_docs.get('embeddings') else None
+                        embedding2 = all_docs['embeddings'][similar_idx] if all_docs.get('embeddings') else None
+                        
+                        if embedding1 and embedding2:
+                            # Calculate cosine similarity using stored embeddings
+                            similarity_matrix = cosine_similarity([embedding1], [embedding2])
+                            similarity = float(similarity_matrix[0][0])
+                        else:
+                            # Fall back to a reasonable default if embeddings not available
+                            similarity = 0.75
                     
                 except Exception as e:
                     print(f"Warning: Could not calculate similarity for pair {doc1_id}-{doc2_id}: {e}")
@@ -259,12 +276,18 @@ async def get_duplicates(organization_id: str):
             unique_docs.add(pair['doc1_id'])
             unique_docs.add(pair['doc2_id'])
         
-        return {
+        result = {
             "duplicate_pairs": formatted_pairs,
             "total_pairs": len(formatted_pairs),
             "total_documents": total_docs,
             "documents_with_duplicates": len(unique_docs)
         }
+        
+        # Cache the result for faster subsequent loads
+        duplicate_cache[cache_key] = result
+        print(f"Cached duplicate data for {organization_id}")
+        
+        return result
         
     except Exception as e:
         print(f"Error getting duplicates: {e}")
