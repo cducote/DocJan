@@ -67,6 +67,24 @@ async def get_connection_status(organization_id: str) -> ConnectionStatus:
         stored_status = organization_status[organization_id]
         return ConnectionStatus(**stored_status)
     
+    # Check if ChromaDB directory actually exists
+    chroma_dir = "./chroma_store"
+    if not os.path.exists(chroma_dir):
+        print(f"ChromaDB directory {chroma_dir} does not exist")
+        # Clear any cached data for this organization
+        cache_key = f"{organization_id}_duplicates"
+        if cache_key in duplicate_cache:
+            del duplicate_cache[cache_key]
+            print(f"Cleared cache for {organization_id}")
+        return ConnectionStatus(
+            status="not_configured",
+            confluence_connected=False,
+            database_connected=False,
+            vector_store_ready=False,
+            last_sync=None,
+            document_count=None
+        )
+    
     # Check if we already have documents in the vector store
     try:
         from models.database import get_document_database
@@ -83,18 +101,28 @@ async def get_connection_status(organization_id: str) -> ConnectionStatus:
                 last_sync=None,  # Could track this in the future
                 document_count=len(all_docs['documents'])
             )
+        else:
+            # ChromaDB exists but is empty
+            print("ChromaDB exists but contains no documents")
+            return ConnectionStatus(
+                status="not_configured",
+                confluence_connected=False,
+                database_connected=False,
+                vector_store_ready=False,
+                last_sync=None,
+                document_count=0
+            )
     except Exception as e:
         print(f"Error checking existing documents: {e}")
-    
-    # Default status for new organizations
-    return ConnectionStatus(
-        status="not_configured",
-        confluence_connected=False,
-        database_connected=False,
-        vector_store_ready=False,
-        last_sync=None,
-        document_count=None
-    )
+        # If there's an error accessing ChromaDB, treat as not configured
+        return ConnectionStatus(
+            status="not_configured",
+            confluence_connected=False,
+            database_connected=False,
+            vector_store_ready=False,
+            last_sync=None,
+            document_count=None
+        )
 
 @app.post("/sync/{organization_id}")
 async def start_sync(organization_id: str, sync_request: SyncRequest, background_tasks: BackgroundTasks):

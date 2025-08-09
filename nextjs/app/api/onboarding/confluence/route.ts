@@ -1,16 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { OrganizationService } from '@/lib/database/organization-service';
+import { auth } from '@clerk/nextjs/server';
+import { UserService } from '@/lib/database/user-service';
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { orgId, username, baseUrl, apiKey } = body;
+    const { username, baseUrl, apiKey } = body;
 
-    console.log('Received onboarding request:', { orgId, username, baseUrl, apiKeyLength: apiKey?.length });
+    console.log('Received onboarding request:', { username, baseUrl, apiKeyLength: apiKey?.length });
+
+    // Get current user
+    const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.json(
+        { error: 'Authentication required' }, 
+        { status: 401 }
+      );
+    }
 
     // Validate required fields
-    if (!orgId || !username || !baseUrl || !apiKey) {
-      console.log('Missing required fields:', { orgId: !!orgId, username: !!username, baseUrl: !!baseUrl, apiKey: !!apiKey });
+    if (!username || !baseUrl || !apiKey) {
+      console.log('Missing required fields:', { username: !!username, baseUrl: !!baseUrl, apiKey: !!apiKey });
       return NextResponse.json(
         { error: 'Missing required fields' }, 
         { status: 400 }
@@ -28,27 +38,26 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Save configuration (skip connection test since we already validated it)
-    console.log('Saving configuration...');
-    const result = await OrganizationService.completeConfluenceOnboarding(orgId, {
+    // Save configuration to user's private metadata
+    console.log('Saving user credentials...');
+    const success = await UserService.storeConfluenceCredentials(userId, {
       username,
       baseUrl,
       apiKey,
     });
 
-    console.log('Save result:', result);
+    console.log('Save result:', success);
 
-    if (!result.success) {
+    if (!success) {
       return NextResponse.json(
-        { error: 'Failed to save configuration' }, 
+        { error: 'Failed to save credentials' }, 
         { status: 500 }
       );
     }
 
     return NextResponse.json({
       success: true,
-      message: 'Confluence configuration saved successfully',
-      secretId: result.secretId,
+      message: 'Confluence credentials saved successfully',
     });
 
   } catch (error) {

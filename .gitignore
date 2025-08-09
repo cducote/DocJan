@@ -2,7 +2,7 @@
 .env
 .env.local
 .env.*.local
-
+*.pem
 # Node.js dependencies
 nextjs/node_modules
 node_modules/

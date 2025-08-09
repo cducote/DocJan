@@ -1,0 +1,422 @@
+"""
+Vector Store Service - Core embedding and ChromaDB operations.
+Extracted from Streamlit app for containerized deployment.
+"""
+import os
+import sys
+from typing import List, Dict, Any, Optional, Tuple
+import numpy as np
+from datetime import datetime, timezone
+
+
+class VectorStoreService:
+    """
+    Core vector store operations service.
+    Handles embedding generation, ChromaDB storage, and duplicate detection.
+    """
+    
+    def __init__(self, chroma_persist_dir: str = "./chroma_store", openai_api_key: Optional[str] = None):
+        """
+        Initialize vector store service.
+        
+        Args:
+            chroma_persist_dir: Directory for ChromaDB persistence
+            openai_api_key: OpenAI API key for embeddings (if None, uses environment)
+        """
+        self.chroma_persist_dir = chroma_persist_dir
+        self.openai_api_key = openai_api_key or os.getenv('OPENAI_API_KEY')
+        
+        if not self.openai_api_key:
+            raise ValueError("OpenAI API key is required. Set OPENAI_API_KEY environment variable or pass it directly.")
+        
+        # Initialize components
+        self._init_embeddings()
+        self._init_database()
+    
+    def _init_embeddings(self):
+        """Initialize OpenAI embeddings."""
+        try:
+            from langchain_openai import OpenAIEmbeddings
+            self.embeddings = OpenAIEmbeddings(
+                model="text-embedding-3-small",
+                openai_api_key=self.openai_api_key
+            )
+        except ImportError:
+            raise ImportError("langchain_openai is required. Install with: pip install langchain-openai")
+    
+    def _init_database(self):
+        """Initialize ChromaDB instance."""
+        try:
+            from langchain_chroma import Chroma
+            self.db = Chroma(
+                persist_directory=self.chroma_persist_dir,
+                embedding_function=self.embeddings
+            )
+        except ImportError:
+            raise ImportError("langchain_chroma is required. Install with: pip install langchain-chroma")
+    
+    def test_connection(self) -> Tuple[bool, str]:
+        """
+        Test vector store connection and embedding generation.
+        
+        Returns:
+            Tuple of (success, message)
+        """
+        try:
+            # Test embedding generation
+            test_text = "This is a test document for embedding generation."
+            embedding = self.embeddings.embed_query(test_text)
+            
+            if not embedding or len(embedding) == 0:
+                return False, "Embedding generation failed"
+            
+            # Test ChromaDB connection
+            collection_count = len(self.db.get()['ids'])
+            
+            return True, f"Vector store connected successfully. Current documents: {collection_count}, Embedding dimension: {len(embedding)}"
+            
+        except Exception as e:
+            return False, f"Vector store connection failed: {str(e)}"
+    
+    def add_documents(self, documents: List[Any], batch_size: int = 50) -> Tuple[bool, str]:
+        """
+        Add documents to the vector store with efficient batching.
+        
+        Args:
+            documents: List of Document objects with page_content and metadata
+            batch_size: Number of documents to process at once
+            
+        Returns:
+            Tuple of (success, message)
+        """
+        try:
+            if not documents:
+                return False, "No documents provided"
+            
+            total_docs = len(documents)
+            added_count = 0
+            
+            # Process documents in batches for efficiency
+            for i in range(0, total_docs, batch_size):
+                batch = documents[i:i + batch_size]
+                
+                # Generate document IDs for this batch
+                doc_ids = []
+                for doc in batch:
+                    doc_id = doc.metadata.get('doc_id')
+                    if not doc_id:
+                        # Generate fallback ID
+                        title = doc.metadata.get('title', 'untitled')
+                        doc_id = f"doc_{hash(title + doc.page_content[:100]) % 1000000}"
+                        doc.metadata['doc_id'] = doc_id
+                    doc_ids.append(doc_id)
+                
+                # Add batch to ChromaDB (this will overwrite existing documents with same IDs)
+                self.db.add_documents(batch, ids=doc_ids)
+                added_count += len(batch)
+                
+                print(f"Added batch {i//batch_size + 1}/{(total_docs + batch_size - 1)//batch_size}: {len(batch)} documents")
+            
+            return True, f"Successfully added {added_count} documents to vector store"
+            
+        except Exception as e:
+            return False, f"Error adding documents to vector store: {str(e)}"
+    
+    def get_document_count(self) -> int:
+        """Get total number of documents in the vector store."""
+        try:
+            return len(self.db.get()['ids'])
+        except Exception:
+            return 0
+    
+    def clear_all_documents(self) -> Tuple[bool, str]:
+        """
+        Clear all documents from the vector store.
+        
+        Returns:
+            Tuple of (success, message)
+        """
+        try:
+            # Get all document IDs
+            all_docs = self.db.get()
+            if all_docs['ids']:
+                self.db.delete(all_docs['ids'])
+                return True, f"Cleared {len(all_docs['ids'])} documents from vector store"
+            else:
+                return True, "Vector store was already empty"
+        except Exception as e:
+            return False, f"Error clearing vector store: {str(e)}"
+    
+    def scan_for_duplicates(self, similarity_threshold: float = 0.65, update_existing: bool = True) -> Tuple[bool, Dict[str, Any]]:
+        """
+        Scan all documents for duplicates and update their similarity relationships.
+        
+        Args:
+            similarity_threshold: Threshold for considering documents similar
+            update_existing: Whether to update existing similarity relationships
+            
+        Returns:
+            Tuple of (success, results_dict)
+        """
+        try:
+            # Get all documents from ChromaDB
+            all_docs = self.db.get()
+            
+            if not all_docs['documents'] or len(all_docs['documents']) < 2:
+                return True, {
+                    'pairs_found': 0,
+                    'documents_updated': 0,
+                    'message': f"Not enough documents for duplicate detection ({len(all_docs['documents']) if all_docs['documents'] else 0} found)",
+                    'threshold_used': similarity_threshold
+                }
+            
+            print(f"Scanning {len(all_docs['documents'])} documents for duplicates...")
+            
+            # Generate embeddings for all documents
+            doc_embeddings = []
+            valid_docs = []
+            
+            for i, doc_content in enumerate(all_docs['documents']):
+                try:
+                    # Skip documents that are too short
+                    if len(doc_content.strip()) < 50:
+                        continue
+                        
+                    embedding = self.embeddings.embed_query(doc_content)
+                    doc_embeddings.append(embedding)
+                    valid_docs.append(i)
+                except Exception as e:
+                    print(f"Warning: Could not generate embedding for document {i}: {e}")
+                    continue
+            
+            if len(valid_docs) < 2:
+                return True, {
+                    'pairs_found': 0,
+                    'documents_updated': 0,
+                    'message': f"Not enough valid documents for duplicate detection ({len(valid_docs)} valid)",
+                    'threshold_used': similarity_threshold
+                }
+            
+            # Calculate similarity matrix
+            from sklearn.metrics.pairwise import cosine_similarity
+            embedding_matrix = np.array(doc_embeddings)
+            similarity_matrix = cosine_similarity(embedding_matrix)
+            
+            # Find similar document pairs above threshold
+            similar_pairs = []
+            similar_docs_metadata = {}
+            
+            for i in range(len(valid_docs)):
+                for j in range(i + 1, len(valid_docs)):
+                    similarity_score = similarity_matrix[i][j]
+                    if similarity_score >= similarity_threshold:
+                        doc_i_idx = valid_docs[i]
+                        doc_j_idx = valid_docs[j]
+                        
+                        title_i = all_docs['metadatas'][doc_i_idx].get('title', f'Document {doc_i_idx+1}')
+                        title_j = all_docs['metadatas'][doc_j_idx].get('title', f'Document {doc_j_idx+1}')
+                        
+                        similar_pairs.append((doc_i_idx, doc_j_idx, similarity_score))
+                        print(f"Found similar pair: '{title_i}' ↔ '{title_j}' (similarity: {similarity_score:.3f})")
+                        
+                        # Build similarity metadata
+                        doc_i_id = all_docs['metadatas'][doc_i_idx].get('doc_id', f'doc_{doc_i_idx}')
+                        doc_j_id = all_docs['metadatas'][doc_j_idx].get('doc_id', f'doc_{doc_j_idx}')
+                        
+                        if doc_i_id not in similar_docs_metadata:
+                            similar_docs_metadata[doc_i_id] = []
+                        if doc_j_id not in similar_docs_metadata:
+                            similar_docs_metadata[doc_j_id] = []
+                        
+                        similar_docs_metadata[doc_i_id].append(doc_j_id)
+                        similar_docs_metadata[doc_j_id].append(doc_i_id)
+            
+            # Update documents with new similarity relationships
+            documents_to_update = []
+            
+            for i, metadata in enumerate(all_docs['metadatas']):
+                doc_id = metadata.get('doc_id', f'doc_{i}')
+                current_similar_docs = metadata.get('similar_docs', '')
+                
+                # Determine new similar_docs value
+                if doc_id in similar_docs_metadata:
+                    new_similar_docs = ','.join(similar_docs_metadata[doc_id])
+                else:
+                    new_similar_docs = ''
+                
+                # Update if different or if update_existing is True
+                if update_existing or current_similar_docs != new_similar_docs:
+                    updated_metadata = metadata.copy()
+                    updated_metadata['similar_docs'] = new_similar_docs
+                    updated_metadata['doc_id'] = doc_id
+                    updated_metadata['last_similarity_scan'] = datetime.now(timezone.utc).isoformat()
+                    
+                    documents_to_update.append({
+                        'id': all_docs['ids'][i],
+                        'document': all_docs['documents'][i],
+                        'metadata': updated_metadata
+                    })
+            
+            # Perform batch update if there are changes
+            updated_count = 0
+            if documents_to_update:
+                try:
+                    from langchain.schema import Document
+                    
+                    # Delete existing documents
+                    ids_to_update = [item['id'] for item in documents_to_update]
+                    self.db.delete(ids_to_update)
+                    
+                    # Add them back with updated metadata
+                    self.db.add_documents(
+                        documents=[Document(page_content=item['document'], metadata=item['metadata']) 
+                                 for item in documents_to_update],
+                        ids=ids_to_update
+                    )
+                    updated_count = len(documents_to_update)
+                    print(f"Updated {updated_count} documents with new similarity relationships")
+                    
+                except Exception as e:
+                    print(f"Error updating documents: {e}")
+                    return False, {
+                        'pairs_found': len(similar_pairs),
+                        'documents_updated': 0,
+                        'message': f"Found {len(similar_pairs)} pairs but failed to update documents: {str(e)}",
+                        'threshold_used': similarity_threshold
+                    }
+            
+            return True, {
+                'pairs_found': len(similar_pairs),
+                'documents_updated': updated_count,
+                'message': f"Successfully found {len(similar_pairs)} duplicate pairs and updated {updated_count} documents",
+                'threshold_used': similarity_threshold
+            }
+            
+        except Exception as e:
+            print(f"Error during duplicate scan: {e}")
+            return False, {
+                'pairs_found': 0,
+                'documents_updated': 0,
+                'message': f"Error during duplicate scan: {str(e)}",
+                'threshold_used': similarity_threshold
+            }
+    
+    def get_duplicates(self) -> List[Dict[str, Any]]:
+        """
+        Get all detected duplicate pairs from the vector store.
+        
+        Returns:
+            List of duplicate pair dictionaries
+        """
+        try:
+            all_docs = self.db.get()
+            
+            if not all_docs['documents']:
+                return []
+            
+            duplicate_pairs = []
+            processed_pairs = set()
+            
+            for i, metadata in enumerate(all_docs['metadatas']):
+                similar_docs_str = metadata.get('similar_docs', '')
+                
+                if not similar_docs_str:
+                    continue
+                
+                similar_doc_ids = [id.strip() for id in similar_docs_str.split(',') if id.strip()]
+                
+                for similar_id in similar_doc_ids:
+                    # Find the similar document
+                    similar_idx = None
+                    for j, other_metadata in enumerate(all_docs['metadatas']):
+                        if other_metadata.get('doc_id', f'doc_{j}') == similar_id:
+                            similar_idx = j
+                            break
+                    
+                    if similar_idx is None:
+                        continue
+                    
+                    # Create a unique pair identifier to avoid duplicates
+                    doc1_id = metadata.get('doc_id', f'doc_{i}')
+                    doc2_id = similar_id
+                    pair_key = tuple(sorted([doc1_id, doc2_id]))
+                    
+                    if pair_key in processed_pairs:
+                        continue
+                    
+                    processed_pairs.add(pair_key)
+                    
+                    # Calculate similarity score using stored embeddings if available
+                    try:
+                        from sklearn.metrics.pairwise import cosine_similarity
+                        
+                        embedding1 = all_docs['embeddings'][i] if all_docs.get('embeddings') else None
+                        embedding2 = all_docs['embeddings'][similar_idx] if all_docs.get('embeddings') else None
+                        
+                        if embedding1 and embedding2:
+                            similarity_matrix = cosine_similarity([embedding1], [embedding2])
+                            similarity = float(similarity_matrix[0][0])
+                        else:
+                            # Fallback to generating embeddings
+                            embedding1 = self.embeddings.embed_query(all_docs['documents'][i])
+                            embedding2 = self.embeddings.embed_query(all_docs['documents'][similar_idx])
+                            similarity_matrix = cosine_similarity([embedding1], [embedding2])
+                            similarity = float(similarity_matrix[0][0])
+                        
+                    except Exception as e:
+                        print(f"Warning: Could not calculate similarity for pair {doc1_id}-{doc2_id}: {e}")
+                        similarity = 0.75  # Default fallback
+                    
+                    duplicate_pairs.append({
+                        "id": len(duplicate_pairs) + 1,
+                        "page1": {
+                            "title": metadata.get('title', 'Unknown'),
+                            "url": metadata.get('source', ''),
+                            "space": metadata.get('space_name', metadata.get('space_key', 'Unknown'))
+                        },
+                        "page2": {
+                            "title": all_docs['metadatas'][similar_idx].get('title', 'Unknown'), 
+                            "url": all_docs['metadatas'][similar_idx].get('source', ''),
+                            "space": all_docs['metadatas'][similar_idx].get('space_name', 
+                                   all_docs['metadatas'][similar_idx].get('space_key', 'Unknown'))
+                        },
+                        "similarity": round(similarity, 3),
+                        "status": "pending"
+                    })
+            
+            return duplicate_pairs
+            
+        except Exception as e:
+            print(f"Error getting duplicates: {e}")
+            return []
+
+
+class VectorStoreConfig:
+    """Configuration helper for vector store service."""
+    
+    @staticmethod
+    def from_environment() -> Tuple[str, str]:
+        """
+        Load vector store configuration from environment variables.
+        
+        Returns:
+            Tuple of (chroma_persist_dir, openai_api_key)
+        """
+        chroma_persist_dir = os.getenv('CHROMA_PERSIST_DIRECTORY', './chroma_store')
+        openai_api_key = os.getenv('OPENAI_API_KEY')
+        
+        if not openai_api_key:
+            raise ValueError("OPENAI_API_KEY environment variable is required")
+        
+        return chroma_persist_dir, openai_api_key
+    
+    @staticmethod
+    def create_service_from_env() -> VectorStoreService:
+        """
+        Create a VectorStoreService instance from environment variables.
+        
+        Returns:
+            Configured VectorStoreService instance
+        """
+        chroma_persist_dir, openai_api_key = VectorStoreConfig.from_environment()
+        return VectorStoreService(chroma_persist_dir, openai_api_key)

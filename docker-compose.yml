@@ -1,0 +1,23 @@
+# Docker Compose for local development
+version: '3.8'
+
+services:
+  confluence-processor:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - CHROMA_PERSIST_DIRECTORY=/data/chroma
+    volumes:
+      - chroma_data:/data/chroma
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  chroma_data:
+    driver: local
