@@ -129,6 +129,43 @@ class VectorStoreService:
         except Exception:
             return 0
     
+    def get_duplicate_count(self) -> int:
+        """
+        Get count of duplicate pairs without expensive calculations.
+        Just counts documents that have similar_docs metadata.
+        
+        Returns:
+            Number of duplicate pairs
+        """
+        try:
+            all_docs = self.db.get()
+            
+            if not all_docs['documents']:
+                return 0
+            
+            # Count unique pairs by looking at similar_docs metadata
+            pairs_found = set()
+            
+            for metadata in all_docs['metadatas']:
+                similar_docs_str = metadata.get('similar_docs', '')
+                
+                if not similar_docs_str:
+                    continue
+                
+                doc_id = metadata.get('doc_id', '')
+                similar_doc_ids = [id.strip() for id in similar_docs_str.split(',') if id.strip()]
+                
+                for similar_id in similar_doc_ids:
+                    # Create a unique pair identifier to avoid double counting
+                    pair_key = tuple(sorted([doc_id, similar_id]))
+                    pairs_found.add(pair_key)
+            
+            return len(pairs_found)
+            
+        except Exception as e:
+            print(f"Error getting duplicate count: {e}")
+            return 0
+    
     def clear_all_documents(self) -> Tuple[bool, str]:
         """
         Clear all documents from the vector store.

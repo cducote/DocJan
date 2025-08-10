@@ -264,6 +264,33 @@ async def get_duplicates() -> List[DuplicatePair]:
         raise HTTPException(status_code=500, detail=f"Failed to get duplicates: {str(e)}")
 
 
+# Get duplicate summary (fast, just counts)
+@app.get("/duplicates/summary")
+async def get_duplicate_summary():
+    """Get duplicate summary without expensive calculations."""
+    try:
+        global vector_store_service
+        
+        if not vector_store_service:
+            raise HTTPException(status_code=400, detail="Vector store not initialized")
+        
+        # Get basic document count
+        document_count = vector_store_service.get_document_count()
+        
+        # Count documents that have similar_docs metadata (fast)
+        duplicate_count = vector_store_service.get_duplicate_count()
+        
+        return {
+            "total_documents": document_count,
+            "duplicate_pairs": duplicate_count,
+            "documents_with_duplicates": duplicate_count * 2 if duplicate_count > 0 else 0,
+            "potential_merges": duplicate_count
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get duplicate summary: {str(e)}")
+
+
 # Clear all data
 @app.delete("/clear")
 async def clear_all_data():

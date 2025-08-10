@@ -108,15 +108,15 @@ export default function DashboardContent({ platform, onPageChange }: DashboardCo
     setDuplicateStats(prev => ({ ...prev, loading: true, error: undefined }));
 
     try {
-      // Use real API to get duplicates
-      const duplicatesData = await api.getDuplicates();
+      // Use lightweight summary API instead of heavy duplicates call
+      const summaryData = await api.getDuplicateSummary();
       
       setDuplicateStats({
         loading: false,
-        duplicatePairs: duplicatesData.length,
-        totalDocuments: connectionStatus?.document_count || 0,
-        documentsWithDuplicates: duplicatesData.length * 2, // Each pair involves 2 documents
-        potentialMerges: duplicatesData.length
+        duplicatePairs: summaryData.duplicate_pairs,
+        totalDocuments: summaryData.total_documents,
+        documentsWithDuplicates: summaryData.documents_with_duplicates,
+        potentialMerges: summaryData.potential_merges
       });
 
     } catch (error) {
@@ -205,8 +205,7 @@ export default function DashboardContent({ platform, onPageChange }: DashboardCo
             <div>
               <span className="text-green-800 dark:text-green-200 font-medium">System Ready</span>
               <p className="text-sm text-green-600 dark:text-green-400">
-                {connectionStatus.document_count ? `${connectionStatus.document_count} documents indexed` : 'Vector store ready'} | 
-                Last processed: {connectionStatus.last_processed ? new Date(connectionStatus.last_processed).toLocaleDateString() : 'Never'}
+                {connectionStatus.document_count ? `${connectionStatus.document_count} documents indexed` : 'Vector store ready'}
               </p>
             </div>
           </div>
