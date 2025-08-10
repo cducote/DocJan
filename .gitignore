@@ -105,3 +105,21 @@ main_old.py
 debug_duplicates_old.py
 simple_api_server_old.py
 api_server_old.py
+
+# Unwanted files that keep reappearing
+api_server.py
+auth.py
+auth/
+enhanced_api_server.py
+main.py
+reset.py
+seed.py
+simple_api_server.py
+terraform/
+test_services.py
+ui/
+
+# Unwanted nextjs routes
+nextjs/app/api/migrate-credentials/
+nextjs/app/test-api/
+nextjs/components/test-api-page.tsx
