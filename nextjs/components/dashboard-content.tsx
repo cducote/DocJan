@@ -151,21 +151,21 @@ export default function DashboardContent({ platform, onPageChange }: DashboardCo
 
       {/* Setup Status Section */}
       {loadingStatus ? (
-        <div className="mb-8 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+        <div className="mb-8 p-4 bg-muted border border-border rounded-lg">
           <div className="flex items-center space-x-2">
-            <div className="animate-spin rounded-full h-4 w-4 border-2 border-blue-600 border-t-transparent"></div>
-            <span className="text-blue-800 dark:text-blue-200">Checking setup status...</span>
+            <div className="animate-spin rounded-full h-4 w-4 border-2 border-primary border-t-transparent"></div>
+            <span className="text-muted-foreground">Checking setup status...</span>
           </div>
         </div>
       ) : !connectionStatus?.vector_store_connected ? (
-        <div className="mb-8 p-6 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg">
+        <div className="mb-8 p-6 bg-orange-50 border border-orange-200 rounded-lg">
           <div className="flex items-start space-x-3">
-            <AlertCircle className="h-6 w-6 text-orange-600 dark:text-orange-400 flex-shrink-0 mt-1" />
+            <AlertCircle className="h-6 w-6 text-orange-600 flex-shrink-0 mt-1" />
             <div className="flex-1">
-              <h3 className="text-lg font-semibold text-orange-800 dark:text-orange-200 mb-2">
+              <h3 className="text-lg font-semibold text-orange-900 mb-2">
                 Initial Setup Required
               </h3>
-              <p className="text-orange-700 dark:text-orange-300 mb-4">
+              <p className="text-orange-700 mb-4">
                 To get started with duplicate detection, we need to perform an initial data ingestion from your {platformName} workspace. 
                 This process will read your documents and create a searchable index for duplicate detection.
               </p>
@@ -173,11 +173,11 @@ export default function DashboardContent({ platform, onPageChange }: DashboardCo
                 <button
                   onClick={startInitialSync}
                   disabled={startingSync}
-                  className="bg-orange-600 hover:bg-orange-700 disabled:bg-orange-400 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors"
+                  className="bg-orange-600 hover:bg-orange-700 disabled:bg-orange-300 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors"
                 >
                   {startingSync ? (
                     <>
-                      <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                      <div className="animate-spin rounded-full h-4 w-4 border-2 border-current border-t-transparent"></div>
                       <span>Starting...</span>
                     </>
                   ) : (
@@ -188,7 +188,7 @@ export default function DashboardContent({ platform, onPageChange }: DashboardCo
                   )}
                 </button>
                 {connectionStatus && (
-                  <div className="text-sm text-orange-600 dark:text-orange-400">
+                  <div className="text-sm text-orange-600">
                     Connection: {connectionStatus.confluence_connected ? '✓' : '✗'} {platformName} | 
                     Vector Store: {connectionStatus.vector_store_connected ? '✓' : '✗'} | 
                     Documents: {connectionStatus.document_count}
@@ -199,12 +199,12 @@ export default function DashboardContent({ platform, onPageChange }: DashboardCo
           </div>
         </div>
       ) : (
-        <div className="mb-8 p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+        <div className="mb-8 p-4 bg-green-50 border border-green-200 rounded-lg">
           <div className="flex items-center space-x-3">
-            <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400" />
+            <CheckCircle className="h-5 w-5 text-green-600" />
             <div>
-              <span className="text-green-800 dark:text-green-200 font-medium">System Ready</span>
-              <p className="text-sm text-green-600 dark:text-green-400">
+              <span className="text-green-900 font-medium">System Ready</span>
+              <p className="text-sm text-green-700">
                 {connectionStatus.document_count ? `${connectionStatus.document_count} documents indexed` : 'Vector store ready'}
               </p>
             </div>
@@ -214,11 +214,11 @@ export default function DashboardContent({ platform, onPageChange }: DashboardCo
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
         {/* Search Section */}
-        <div className="rounded-lg shadow p-6 border border-gray-200">
-          <h2 className="text-xl font-semibold mb-4">
+        <div className="rounded-lg shadow p-6 border border-border bg-card">
+          <h2 className="text-xl font-semibold mb-4 text-foreground">
             Search {platformName}
           </h2>
-          <p className="mb-4">
+          <p className="mb-4 text-muted-foreground">
             {platform === 'confluence' 
               ? 'Search for Confluence pages and discover potential duplicates using semantic search.'
               : 'Search for SharePoint documents and discover potential duplicates.'
@@ -233,13 +233,13 @@ export default function DashboardContent({ platform, onPageChange }: DashboardCo
                 onChange={(e) => setQuickSearchQuery(e.target.value)}
                 placeholder={connectionStatus?.vector_store_connected ? "Enter search terms..." : "Complete setup to enable search"}
                 disabled={!connectionStatus?.vector_store_connected}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:text-gray-500 dark:disabled:bg-gray-800 dark:disabled:text-gray-400"
+                className="w-full px-4 py-2 border border-input bg-background rounded-lg focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
               />
             </div>
             <button
               type="submit"
               disabled={!connectionStatus?.vector_store_connected}
-              className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white py-2 px-4 rounded-lg transition-colors"
+              className="w-full bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-primary-foreground py-2 px-4 rounded-lg transition-colors"
             >
               {connectionStatus?.vector_store_connected ? 'Search' : 'Setup Required'}
             </button>
@@ -247,11 +247,11 @@ export default function DashboardContent({ platform, onPageChange }: DashboardCo
         </div>
 
         {/* Duplicates Section */}
-        <div className="rounded-lg shadow p-6 border border-gray-200">
-          <h2 className="text-xl font-semibold mb-4">
+        <div className="rounded-lg shadow p-6 border border-border bg-card">
+          <h2 className="text-xl font-semibold mb-4 text-foreground">
             Content Analysis
           </h2>
-          <p className="mb-4">
+          <p className="mb-4 text-muted-foreground">
             {platform === 'confluence'
               ? 'Review and manage Confluence page pairs that have been automatically detected as potential duplicates.'
               : 'View and manage your SharePoint document duplicates.'
@@ -259,32 +259,32 @@ export default function DashboardContent({ platform, onPageChange }: DashboardCo
           </p>
 
           {!connectionStatus?.vector_store_connected ? (
-            <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+            <div className="text-center py-8 text-muted-foreground">
               <Database className="h-12 w-12 mx-auto mb-4 opacity-50" />
               <p>Complete the initial data ingestion to see duplicate detection results.</p>
             </div>
           ) : duplicateStats.loading ? (
-            <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-              <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-600 border-t-transparent mx-auto mb-4"></div>
+            <div className="text-center py-8 text-muted-foreground">
+              <div className="animate-spin rounded-full h-8 w-8 border-2 border-primary border-t-transparent mx-auto mb-4"></div>
               <p>Loading duplicate detection data...</p>
             </div>
           ) : duplicateStats.error ? (
-            <div className="text-red-600">
+            <div className="text-destructive">
               <p>Error: {duplicateStats.error}</p>
-              <div className="mt-4 p-4 bg-red-50 rounded-lg">
+              <div className="mt-4 p-4 bg-destructive/10 rounded-lg">
                 <p className="font-medium">Duplicate Pairs Found: Error</p>
               </div>
             </div>
           ) : (
             <div>
-              <div className="border border-blue-200 rounded-lg p-4 mb-4">
-                <p className="text-2xl font-bold text-blue-900 mb-1">
+              <div className="border border-border rounded-lg p-4 mb-4">
+                <p className="text-2xl font-bold text-foreground mb-1">
                   {duplicateStats.duplicatePairs}
                 </p>
-                <p className="text-blue-700 text-sm">Duplicate Pairs Found</p>
+                <p className="text-muted-foreground text-sm">Duplicate Pairs Found</p>
               </div>
               
-              <div className=" mb-4">
+              <div className="mb-4 text-foreground">
                 {duplicateStats.duplicatePairs === 1 
                   ? `Found ${duplicateStats.duplicatePairs} duplicate pair.`
                   : `Found ${duplicateStats.duplicatePairs} duplicate pairs.`
@@ -293,7 +293,7 @@ export default function DashboardContent({ platform, onPageChange }: DashboardCo
 
               <button
                 onClick={() => onPageChange('duplicates')}
-                className="w-full bg-green-600 text-white py-2 px-4 rounded-lg hover:bg-green-700 transition-colors"
+                className="w-full bg-primary text-primary-foreground py-2 px-4 rounded-lg hover:bg-primary/90 transition-colors"
               >
                 View Content Report
               </button>
@@ -303,36 +303,36 @@ export default function DashboardContent({ platform, onPageChange }: DashboardCo
       </div>
 
       {/* Statistics Section */}
-      <div className="rounded-lg shadow p-6 border border-gray-200">
-        <h2 className="text-xl font-semibold mb-6 ">Statistics</h2>
+      <div className="rounded-lg shadow p-6 border border-border bg-card">
+        <h2 className="text-xl font-semibold mb-6 text-foreground">Statistics</h2>
         
         <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
           <div className="text-center">
-            <div className="text-2xl font-bold  mb-1">
+            <div className="text-2xl font-bold text-foreground mb-1">
               {duplicateStats.loading ? '...' : duplicateStats.totalDocuments.toLocaleString()}
             </div>
-            <div className="text-sm ">Total Documents</div>
+            <div className="text-sm text-muted-foreground">Total Documents</div>
           </div>
           
           <div className="text-center">
-            <div className="text-2xl font-bold text-blue-600 mb-1">
+            <div className="text-2xl font-bold text-primary mb-1">
               {duplicateStats.loading ? '...' : duplicateStats.duplicatePairs}
             </div>
-            <div className="text-sm ">Duplicate Pairs</div>
+            <div className="text-sm text-muted-foreground">Duplicate Pairs</div>
           </div>
           
           <div className="text-center">
-            <div className="text-2xl font-bold text-orange-600 mb-1">
+            <div className="text-2xl font-bold text-secondary-foreground mb-1">
               {duplicateStats.loading ? '...' : duplicateStats.documentsWithDuplicates}
             </div>
-            <div className="text-sm ">Documents with Duplicates</div>
+            <div className="text-sm text-muted-foreground">Documents with Duplicates</div>
           </div>
           
           <div className="text-center">
-            <div className="text-2xl font-bold text-green-600 mb-1">
+            <div className="text-2xl font-bold text-accent-foreground mb-1">
               {duplicateStats.loading ? '...' : duplicateStats.potentialMerges}
             </div>
-            <div className="text-sm">Potential Merges</div>
+            <div className="text-sm text-muted-foreground">Potential Merges</div>
           </div>
         </div>
       </div>
