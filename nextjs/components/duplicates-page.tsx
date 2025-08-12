@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
+import Sidebar from '@/components/sidebar';
 import { useOrganization } from '@clerk/nextjs';
 import { FileText, ExternalLink, AlertTriangle, CheckCircle } from 'lucide-react';
 import { api } from '../lib/api';

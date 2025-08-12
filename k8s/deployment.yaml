@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: concatly-api
+  labels:
+    app: concatly-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: concatly-api
+  template:
+    metadata:
+      labels:
+        app: concatly-api
+    spec:
+      containers:
+      - name: concatly-api
+        image: 039612881134.dkr.ecr.us-east-1.amazonaws.com/concatly-cluster-api:latest
+        ports:
+        - containerPort: 8000
+        env:
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: concatly-secrets
+              key: openai-api-key
+        - name: CHROMA_PERSIST_DIRECTORY
+          value: "/app/chroma_store"
+        - name: HOST
+          value: "0.0.0.0"
+        - name: PORT
+          value: "8000"
+        resources:
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        volumeMounts:
+        - name: chroma-storage
+          mountPath: /app/chroma_store
+      volumes:
+      - name: chroma-storage
+        persistentVolumeClaim:
+          claimName: chroma-pvc
