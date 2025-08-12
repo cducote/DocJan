@@ -3,6 +3,9 @@
 .env.local
 .env.*.local
 *.pem
+
+# Kubernetes secrets (NEVER commit these!)
+k8s/secrets.yaml
 # Node.js dependencies
 nextjs/node_modules
 node_modules/
