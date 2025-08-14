@@ -118,7 +118,17 @@ main.py
 reset.py
 seed.py
 simple_api_server.py
-terraform/
+# Terraform
+.terraform/
+.terraform.lock.hcl
+terraform.tfstate
+terraform.tfstate.backup
+*.tfplan
+*.tfstate
+*.tfstate.*
+.terraformrc
+terraform.rc
+
 test_services.py
 ui/
 

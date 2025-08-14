@@ -5,7 +5,7 @@ metadata:
   labels:
     app: concatly-api
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: concatly-api
@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
       - name: concatly-api
-        image: 039612881134.dkr.ecr.us-east-1.amazonaws.com/concatly-cluster-api:latest
+        image: 039612881134.dkr.ecr.us-east-1.amazonaws.com/concatly-cluster-api:amd64
         ports:
         - containerPort: 8000
         env:
