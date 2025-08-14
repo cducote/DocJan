@@ -90,12 +90,39 @@ async def startup_event():
     """Initialize services on startup."""
     global vector_store_service
     
+    print("🚀 [STARTUP] Application starting up...")
+    print(f"🚀 [STARTUP] Environment check - OpenAI API Key: {'✅ Set' if os.getenv('OPENAI_API_KEY') else '❌ Missing'}")
+    print(f"🚀 [STARTUP] Environment check - ChromaDB persist dir: {os.getenv('CHROMA_PERSIST_DIRECTORY', './chroma_store')}")
+    print(f"🚀 [STARTUP] Current working directory: {os.getcwd()}")
+    
     try:
+        print("🗄️ [STARTUP] Initializing vector store service from environment...")
         # Initialize vector store service from environment
         vector_store_service = VectorStoreConfig.create_service_from_env()
-        print("✅ Vector store service initialized successfully")
+        print("✅ [STARTUP] Vector store service initialized successfully")
+        
+        # Test the vector store
+        try:
+            print("🧪 [STARTUP] Testing vector store connection...")
+            vs_success, vs_message = vector_store_service.test_connection()
+            if vs_success:
+                print(f"✅ [STARTUP] Vector store test successful: {vs_message}")
+                doc_count = vector_store_service.get_document_count()
+                print(f"📊 [STARTUP] Vector store contains {doc_count} documents")
+            else:
+                print(f"❌ [STARTUP] Vector store test failed: {vs_message}")
+        except Exception as vs_test_error:
+            print(f"💥 [STARTUP] Vector store test error: {vs_test_error}")
+            print(f"💥 [STARTUP] Error type: {type(vs_test_error).__name__}")
+            import traceback
+            print(f"💥 [STARTUP] Traceback: {traceback.format_exc()}")
+            
     except Exception as e:
-        print(f"⚠️ Vector store service initialization failed: {e}")
+        print(f"❌ [STARTUP] Vector store service initialization failed: {e}")
+        print(f"❌ [STARTUP] Error type: {type(e).__name__}")
+        import traceback
+        print(f"❌ [STARTUP] Traceback: {traceback.format_exc()}")
+        print(f"❌ [STARTUP] Will try to initialize on first request")
         # Continue without vector store - will be initialized on first request
 
 
@@ -103,14 +130,38 @@ async def startup_event():
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
-    return {
+    health_info = {
         "status": "healthy",
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "services": {
             "vector_store": vector_store_service is not None,
             "confluence": confluence_service is not None
+        },
+        "environment": {
+            "openai_api_key_set": bool(os.getenv('OPENAI_API_KEY')),
+            "chroma_persist_dir": os.getenv('CHROMA_PERSIST_DIRECTORY', './chroma_store'),
+            "working_directory": os.getcwd()
         }
     }
+    
+    # Test vector store if available
+    if vector_store_service:
+        try:
+            vs_success, vs_message = vector_store_service.test_connection()
+            doc_count = vector_store_service.get_document_count()
+            health_info["vector_store_details"] = {
+                "connected": vs_success,
+                "message": vs_message,
+                "document_count": doc_count
+            }
+        except Exception as e:
+            health_info["vector_store_details"] = {
+                "connected": False,
+                "error": str(e)
+            }
+    
+    print(f"🩺 [HEALTH] Health check result: {health_info}")
+    return health_info
 
 
 # Connection test endpoint
@@ -215,15 +266,26 @@ async def get_processing_status(processing_id: str):
 async def get_connection_status() -> ConnectionStatus:
     """Get overall connection and system status."""
     try:
+        print("🔍 [CONNECTION-STATUS] Checking system status...")
+        
         # Check vector store
         vector_store_connected = False
         document_count = 0
         
         if vector_store_service:
+            print("🔍 [CONNECTION-STATUS] Vector store service exists, testing connection...")
             vs_success, vs_message = vector_store_service.test_connection()
+            print(f"🔍 [CONNECTION-STATUS] Vector store test result: {vs_success}, message: {vs_message}")
             vector_store_connected = vs_success
             if vs_success:
-                document_count = vector_store_service.get_document_count()
+                try:
+                    document_count = vector_store_service.get_document_count()
+                    print(f"🔍 [CONNECTION-STATUS] Document count: {document_count}")
+                except Exception as count_error:
+                    print(f"❌ [CONNECTION-STATUS] Failed to get document count: {count_error}")
+                    document_count = 0
+        else:
+            print("❌ [CONNECTION-STATUS] Vector store service is None")
         
         # Determine overall status
         if vector_store_connected:
@@ -234,14 +296,21 @@ async def get_connection_status() -> ConnectionStatus:
         else:
             status = "not_configured"
         
-        return ConnectionStatus(
+        result = ConnectionStatus(
             confluence_connected=confluence_service is not None,
             vector_store_connected=vector_store_connected,
             document_count=document_count,
             status=status
         )
         
+        print(f"🔍 [CONNECTION-STATUS] Final result: {result}")
+        return result
+        
     except Exception as e:
+        print(f"💥 [CONNECTION-STATUS] Error getting status: {e}")
+        print(f"💥 [CONNECTION-STATUS] Error type: {type(e).__name__}")
+        import traceback
+        print(f"💥 [CONNECTION-STATUS] Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Failed to get status: {str(e)}")
 
 
@@ -319,12 +388,19 @@ async def process_documents_background(processing_id: str, request: ProcessingRe
     """Background task for processing documents."""
     global confluence_service, vector_store_service
     
+    print(f"🚀 [PROCESSING {processing_id}] Starting background processing")
+    print(f"📋 [PROCESSING {processing_id}] Request details: {len(request.space_keys)} spaces, threshold: {request.similarity_threshold}")
+    
     try:
         # Update status
         processing_status[processing_id].update({
             "status": "connecting",
             "message": "Connecting to Confluence..."
         })
+        
+        print(f"🔗 [PROCESSING {processing_id}] Initializing Confluence service...")
+        print(f"🔗 [PROCESSING {processing_id}] Base URL: {request.credentials.base_url}")
+        print(f"🔗 [PROCESSING {processing_id}] Username: {request.credentials.username}")
         
         # Initialize Confluence service
         confluence_service = ConfluenceService(
@@ -334,23 +410,71 @@ async def process_documents_background(processing_id: str, request: ProcessingRe
         )
         
         # Test connection
+        print(f"🧪 [PROCESSING {processing_id}] Testing Confluence connection...")
         conn_success, conn_message = confluence_service.test_connection()
         if not conn_success:
+            print(f"❌ [PROCESSING {processing_id}] Confluence connection failed: {conn_message}")
             processing_status[processing_id].update({
                 "status": "failed",
                 "message": f"Confluence connection failed: {conn_message}"
             })
             return
         
+        print(f"✅ [PROCESSING {processing_id}] Confluence connection successful")
+        
         # Initialize vector store if not already done
+        print(f"🗄️ [PROCESSING {processing_id}] Checking vector store service...")
         if not vector_store_service:
-            vector_store_service = VectorStoreConfig.create_service_from_env()
+            try:
+                print(f"🗄️ [PROCESSING {processing_id}] Creating new vector store service...")
+                vector_store_service = VectorStoreConfig.create_service_from_env()
+                print(f"✅ [PROCESSING {processing_id}] Vector store service initialized")
+            except Exception as vs_init_error:
+                print(f"💥 [PROCESSING {processing_id}] Vector store initialization failed: {vs_init_error}")
+                print(f"💥 [PROCESSING {processing_id}] Error type: {type(vs_init_error).__name__}")
+                import traceback
+                print(f"💥 [PROCESSING {processing_id}] Traceback: {traceback.format_exc()}")
+                processing_status[processing_id].update({
+                    "status": "failed",
+                    "message": f"Vector store initialization failed: {vs_init_error}"
+                })
+                return
+        else:
+            print(f"✅ [PROCESSING {processing_id}] Using existing vector store service")
+        
+        # Check vector store status
+        print(f"🔍 [PROCESSING {processing_id}] Checking vector store status...")
+        try:
+            vs_success, vs_message = vector_store_service.test_connection()
+            if vs_success:
+                print(f"✅ [PROCESSING {processing_id}] Vector store connection test passed: {vs_message}")
+                doc_count = vector_store_service.get_document_count()
+                print(f"📊 [PROCESSING {processing_id}] Current vector store has {doc_count} documents")
+            else:
+                print(f"❌ [PROCESSING {processing_id}] Vector store connection test failed: {vs_message}")
+                processing_status[processing_id].update({
+                    "status": "failed",
+                    "message": f"Vector store connection test failed: {vs_message}"
+                })
+                return
+        except Exception as vs_error:
+            print(f"💥 [PROCESSING {processing_id}] Vector store test error: {vs_error}")
+            print(f"💥 [PROCESSING {processing_id}] Error type: {type(vs_error).__name__}")
+            import traceback
+            print(f"💥 [PROCESSING {processing_id}] Traceback: {traceback.format_exc()}")
+            processing_status[processing_id].update({
+                "status": "failed",
+                "message": f"Vector store test error: {vs_error}"
+            })
+            return
         
         # Update status
         processing_status[processing_id].update({
             "status": "loading",
             "message": f"Loading documents from {len(request.space_keys)} spaces..."
         })
+        
+        print(f"📚 [PROCESSING {processing_id}] Loading documents from spaces: {request.space_keys}")
         
         # Load documents from Confluence
         load_success, documents, load_message = confluence_service.load_all_pages_from_spaces(
@@ -359,11 +483,14 @@ async def process_documents_background(processing_id: str, request: ProcessingRe
         )
         
         if not load_success:
+            print(f"❌ [PROCESSING {processing_id}] Document loading failed: {load_message}")
             processing_status[processing_id].update({
                 "status": "failed",
                 "message": f"Document loading failed: {load_message}"
             })
             return
+        
+        print(f"✅ [PROCESSING {processing_id}] Loaded {len(documents)} documents from Confluence")
         
         processing_status[processing_id].update({
             "documents_loaded": len(documents),
@@ -371,14 +498,36 @@ async def process_documents_background(processing_id: str, request: ProcessingRe
         })
         
         # Add documents to vector store
-        add_success, add_message = vector_store_service.add_documents(documents)
-        
-        if not add_success:
+        print(f"💾 [PROCESSING {processing_id}] Adding {len(documents)} documents to vector store...")
+        try:
+            add_success, add_message = vector_store_service.add_documents(documents)
+            
+            if not add_success:
+                print(f"❌ [PROCESSING {processing_id}] Vector store addition failed: {add_message}")
+                processing_status[processing_id].update({
+                    "status": "failed",
+                    "message": f"Vector store addition failed: {add_message}"
+                })
+                return
+            
+            print(f"✅ [PROCESSING {processing_id}] Documents successfully added to vector store: {add_message}")
+        except Exception as add_error:
+            print(f"💥 [PROCESSING {processing_id}] Vector store addition error: {add_error}")
+            print(f"💥 [PROCESSING {processing_id}] Error type: {type(add_error).__name__}")
+            import traceback
+            print(f"💥 [PROCESSING {processing_id}] Traceback: {traceback.format_exc()}")
             processing_status[processing_id].update({
                 "status": "failed",
-                "message": f"Vector store addition failed: {add_message}"
+                "message": f"Vector store addition error: {add_error}"
             })
             return
+        
+        # Check vector store status after adding
+        try:
+            new_doc_count = vector_store_service.get_document_count()
+            print(f"📊 [PROCESSING {processing_id}] Vector store now has {new_doc_count} documents")
+        except Exception as vs_error:
+            print(f"⚠️ [PROCESSING {processing_id}] Could not get updated document count: {vs_error}")
         
         # Update status
         processing_status[processing_id].update({
@@ -387,12 +536,14 @@ async def process_documents_background(processing_id: str, request: ProcessingRe
         })
         
         # Scan for duplicates
+        print(f"🔍 [PROCESSING {processing_id}] Scanning for duplicates with threshold {request.similarity_threshold}...")
         scan_success, scan_results = vector_store_service.scan_for_duplicates(
             similarity_threshold=request.similarity_threshold,
             update_existing=True
         )
         
         if scan_success:
+            print(f"✅ [PROCESSING {processing_id}] Duplicate scan completed successfully")
             processing_status[processing_id].update({
                 "status": "completed",
                 "message": "Processing completed successfully",
@@ -408,6 +559,11 @@ async def process_documents_background(processing_id: str, request: ProcessingRe
             })
         
     except Exception as e:
+        print(f"💥 [PROCESSING {processing_id}] CRITICAL ERROR: {str(e)}")
+        print(f"💥 [PROCESSING {processing_id}] Error type: {type(e).__name__}")
+        import traceback
+        print(f"💥 [PROCESSING {processing_id}] Traceback: {traceback.format_exc()}")
+        
         processing_status[processing_id].update({
             "status": "failed",
             "message": f"Processing failed: {str(e)}",

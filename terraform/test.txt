@@ -1,0 +1,60 @@
+cluster:
+  accessConfig:
+    authenticationMode: CONFIG_MAP
+  arn: arn:aws:eks:us-east-1:039612881134:cluster/concatly-cluster
+  certificateAuthority:
+    data: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSURCVENDQWUyZ0F3SUJBZ0lJQ0lYTUovYmRQWE13RFFZSktvWklodmNOQVFFTEJRQXdGVEVUTUJFR0ExVUUKQXhNS2EzVmlaWEp1WlhSbGN6QWVGdzB5TlRBNE1USXlNVFE1TWpsYUZ3MHpOVEE0TVRBeU1UVTBNamxhTUJVeApFekFSQmdOVkJBTVRDbXQxWW1WeWJtVjBaWE13Z2dFaU1BMEdDU3FHU0liM0RRRUJBUVVBQTRJQkR3QXdnZ0VLCkFvSUJBUURaREJmVTk4a05XV1Y4ZThHZW5qMFBHd0JQcGNKRGJYelZtMHZIc2xnTkFTU3JSQ0hteVgyQmlLZWcKWEpKdEJ2ekpOcWdMME9HWFVBeVdCT0Y5a0pMNGFhU0Vac0RJckFNa3VMdWcyajlPOHhTTjdWVjNUbDM0cDdjTwpQd21EWkxRMFlsbTBUcGhaOEo3RDhtaXlZUkhZNVd2Y2FjY21JTkhPaTNJWEJUaXpjcHBaLzZsaW14UFVjcnp6Cllkd1dJTWsvd2hCL3N6a0twTmFnV1ZQUWNKdzMzcWlRMUtLN1ErOXNhdzNkRmZlWU4raENtVUVMdjkwdHY1UHAKUi9aWklONjUzMFZUbmQxMG5EblMwNlkzOVZ4SUdINmdLazVBMmdoR2tibTFTUTlwYk1UTi9aeE5aTldpejZjOApFSmJQUjVGaE5TQWMwbnlIeWVGSXF5MnVab1FwQWdNQkFBR2pXVEJYTUE0R0ExVWREd0VCL3dRRUF3SUNwREFQCkJnTlZIUk1CQWY4RUJUQURBUUgvTUIwR0ExVWREZ1FXQkJUVWI1cFhCWUpXYWlIcVBEU3dGb09pVlhKR1hEQVYKQmdOVkhSRUVEakFNZ2dwcmRXSmxjbTVsZEdWek1BMEdDU3FHU0liM0RRRUJDd1VBQTRJQkFRQUR1cmNsTjFJdAptZXhDVCtHRWhLdDJKRkFsSXZ1emRmN00zc2Q1RXhXaHo1S1UwL3RFc0pkdEdwTDZ0ZzBqQXZKcGZKRUcraWhOCitzT1Qzc0sxc1VlVGptdkpDeVlXNStkVmJ2Q0VBbTFLOEtKV0ZyTFlOS0JpWUttdU9laFFOYVJzRFVBZW5OSU4KdVFlRVJYb0EwOXpFNE9aWTJYVVlsWmtDb1dsS2h4NHJWVjhrdHJhelVCcitPeGM3YUNHVUFEVFI5MGR1SWRMZwpzQ21CeWRYMlVwK01FTlVxSmtIeU9wTXRLb3IxNWlzbC9nalhsbUtlMjNmQWVha1ltOTc4NUFjeWFnNUdSVkxTCmNmTU5OTlM3S0RoZGtjT2tQQS9EdHRjNFcyZnRRdG11RDEvem1uaVpGOUorb0NZNnpwR01Od0toRDFwQkxTVDgKWDM5YXJ1QWoyUGNVCi0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0K
+  createdAt: '2025-08-12T17:49:24.599000-04:00'
+  deletionProtection: false
+  encryptionConfig:
+  - provider:
+      keyArn: arn:aws:kms:us-east-1:039612881134:key/c068244d-5826-4dea-adf9-218bd8eb5440
+    resources:
+    - secrets
+  endpoint: https://CF8CE3454D8EB9153D89C47EAD724952.gr7.us-east-1.eks.amazonaws.com
+  identity:
+    oidc:
+      issuer: https://oidc.eks.us-east-1.amazonaws.com/id/CF8CE3454D8EB9153D89C47EAD724952
+  kubernetesNetworkConfig:
+    elasticLoadBalancing:
+      enabled: false
+    ipFamily: ipv4
+    serviceIpv4Cidr: 172.20.0.0/16
+  logging:
+    clusterLogging:
+    - enabled: true
+      types:
+      - api
+      - audit
+      - authenticator
+    - enabled: false
+      types:
+      - controllerManager
+      - scheduler
+  name: concatly-cluster
+  platformVersion: eks.40
+  resourcesVpcConfig:
+    clusterSecurityGroupId: sg-08e47c36f1a333b49
+    endpointPrivateAccess: true
+    endpointPublicAccess: true
+    publicAccessCidrs:
+    - 0.0.0.0/0
+    securityGroupIds:
+    - sg-00b438fd40bca9876
+    subnetIds:
+    - subnet-05e53d1ddd2eb9596
+    - subnet-0a231214652a257e4
+    - subnet-0fcf832e14dbfebb5
+    - subnet-0360a4a2ecb7ccdd6
+    - subnet-0f447482aff6255fa
+    - subnet-0a7af88a2e24d1100
+    vpcId: vpc-0e273858e0ddd6bb1
+  roleArn: arn:aws:iam::039612881134:role/concatly-cluster-cluster-20250812214856395000000002
+  status: ACTIVE
+  tags:
+    Environment: production
+    Project: concatly
+    Terraform: 'true'
+  upgradePolicy:
+    supportType: EXTENDED
+  version: '1.30'

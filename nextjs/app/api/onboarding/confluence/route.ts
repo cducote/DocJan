@@ -1,20 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { UserService } from '@/lib/database/user-service';
+import { OrganizationService } from '@/lib/database/organization-service';
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { username, baseUrl, apiKey } = body;
+    const { username, baseUrl, apiKey, orgId } = body;
 
-    console.log('Received onboarding request:', { username, baseUrl, apiKeyLength: apiKey?.length });
+    console.log('Received onboarding request:', { username, baseUrl, apiKeyLength: apiKey?.length, orgId });
 
     // Get current user
-    const { userId } = await auth();
+    const { userId, orgId: authOrgId } = await auth();
     if (!userId) {
       return NextResponse.json(
         { error: 'Authentication required' }, 
         { status: 401 }
+      );
+    }
+
+    // Use orgId from auth context if not provided in body
+    const organizationId = orgId || authOrgId;
+    if (!organizationId) {
+      return NextResponse.json(
+        { error: 'No organization context found' }, 
+        { status: 400 }
       );
     }
 
@@ -40,24 +50,43 @@ export async function POST(request: NextRequest) {
 
     // Save configuration to user's private metadata
     console.log('Saving user credentials...');
-    const success = await UserService.storeConfluenceCredentials(userId, {
+    const userSuccess = await UserService.storeConfluenceCredentials(userId, {
       username,
       baseUrl,
       apiKey,
     });
 
-    console.log('Save result:', success);
+    console.log('User save result:', userSuccess);
 
-    if (!success) {
+    if (!userSuccess) {
       return NextResponse.json(
-        { error: 'Failed to save credentials' }, 
+        { error: 'Failed to save user credentials' }, 
         { status: 500 }
       );
     }
 
+    // Complete organization onboarding
+    console.log('Completing organization onboarding...');
+    const orgResult = await OrganizationService.completeConfluenceOnboarding(organizationId, {
+      username,
+      baseUrl,
+      apiKey,
+    });
+
+    console.log('Organization onboarding result:', orgResult);
+
+    if (!orgResult.success) {
+      console.error('Organization onboarding failed:', orgResult);
+      return NextResponse.json(
+        { error: 'Failed to complete organization onboarding' }, 
+        { status: 500 }
+      );
+    }
+
+    console.log('✅ Onboarding completed successfully, sending response...');
     return NextResponse.json({
       success: true,
-      message: 'Confluence credentials saved successfully',
+      message: 'Confluence onboarding completed successfully',
     });
 
   } catch (error) {

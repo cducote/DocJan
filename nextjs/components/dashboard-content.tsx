@@ -46,10 +46,16 @@ export default function DashboardContent({ platform, onPageChange }: DashboardCo
     
     setLoadingStatus(true);
     try {
+      console.log('[DASHBOARD] Checking connection status...');
       const status = await api.getConnectionStatus();
+      console.log('[DASHBOARD] Connection status received:', status);
       setConnectionStatus(status);
     } catch (error) {
-      console.error('Failed to check connection status:', error);
+      console.error('[DASHBOARD] Failed to check connection status:', error);
+      console.error('[DASHBOARD] Error details:', {
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined
+      });
       // If the API call fails, assume no setup has been done
       setConnectionStatus(null);
     } finally {
@@ -62,10 +68,20 @@ export default function DashboardContent({ platform, onPageChange }: DashboardCo
     
     setStartingSync(true);
     try {
+      console.log('[DASHBOARD] Starting initial sync for organization:', organization.id);
+      
       // Get Confluence credentials from the API (stored in organization settings)
+      console.log('[DASHBOARD] Fetching organization credentials...');
       const credentialsResponse = await fetch('/api/organization/credentials');
       
       if (!credentialsResponse.ok) {
+        const errorText = await credentialsResponse.text();
+        console.error('[DASHBOARD] Failed to fetch credentials:', {
+          status: credentialsResponse.status,
+          statusText: credentialsResponse.statusText,
+          body: errorText
+        });
+        
         if (credentialsResponse.status === 404) {
           alert('Please complete the onboarding setup first to configure your Confluence connection.');
         } else {
@@ -75,20 +91,29 @@ export default function DashboardContent({ platform, onPageChange }: DashboardCo
       }
       
       const credentials = await credentialsResponse.json();
+      console.log('[DASHBOARD] Credentials retrieved successfully');
 
-      await api.startSync({
+      console.log('[DASHBOARD] Starting sync with backend...');
+      const syncResult = await api.startSync({
         organization_id: organization.id,
         confluence_url: credentials.baseUrl,
         username: credentials.username,
         api_token: credentials.apiKey,
       });
 
+      console.log('[DASHBOARD] Sync started successfully:', syncResult);
+
       // Refresh connection status
+      console.log('[DASHBOARD] Refreshing connection status...');
       await checkConnectionStatus();
       
       alert('Data ingestion started! This may take a few minutes to complete.');
     } catch (error) {
-      console.error('Failed to start sync:', error);
+      console.error('[DASHBOARD] Failed to start sync:', error);
+      console.error('[DASHBOARD] Sync error details:', {
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined
+      });
       alert('Failed to start data ingestion. Please check your connection settings.');
     } finally {
       setStartingSync(false);
@@ -96,8 +121,8 @@ export default function DashboardContent({ platform, onPageChange }: DashboardCo
   };
 
   useEffect(() => {
-    // Only load duplicate data if we have a complete setup
-    if (connectionStatus?.vector_store_connected) {
+    // Only load duplicate data if we have a complete setup AND documents
+    if (connectionStatus?.vector_store_connected && connectionStatus?.document_count > 0) {
       loadDuplicateData();
     }
   }, [platform, connectionStatus]);
@@ -157,7 +182,7 @@ export default function DashboardContent({ platform, onPageChange }: DashboardCo
             <span className="text-muted-foreground">Checking setup status...</span>
           </div>
         </div>
-      ) : !connectionStatus?.vector_store_connected ? (
+      ) : !connectionStatus?.vector_store_connected || connectionStatus?.document_count === 0 ? (
         <div className="mb-8 p-6 bg-orange-50 border border-orange-200 rounded-lg">
           <div className="flex items-start space-x-3">
             <AlertCircle className="h-6 w-6 text-orange-600 flex-shrink-0 mt-1" />
@@ -191,7 +216,8 @@ export default function DashboardContent({ platform, onPageChange }: DashboardCo
                   <div className="text-sm text-orange-600">
                     Connection: {connectionStatus.confluence_connected ? '✓' : '✗'} {platformName} | 
                     Vector Store: {connectionStatus.vector_store_connected ? '✓' : '✗'} | 
-                    Documents: {connectionStatus.document_count}
+                    Documents: {connectionStatus.document_count} | 
+                    Status: {connectionStatus.status}
                   </div>
                 )}
               </div>
@@ -231,17 +257,17 @@ export default function DashboardContent({ platform, onPageChange }: DashboardCo
                 type="text"
                 value={quickSearchQuery}
                 onChange={(e) => setQuickSearchQuery(e.target.value)}
-                placeholder={connectionStatus?.vector_store_connected ? "Enter search terms..." : "Complete setup to enable search"}
-                disabled={!connectionStatus?.vector_store_connected}
+                placeholder={(connectionStatus?.vector_store_connected && connectionStatus?.document_count > 0) ? "Enter search terms..." : "Complete setup to enable search"}
+                disabled={!(connectionStatus?.vector_store_connected && connectionStatus?.document_count > 0)}
                 className="w-full px-4 py-2 border border-input bg-background rounded-lg focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
               />
             </div>
             <button
               type="submit"
-              disabled={!connectionStatus?.vector_store_connected}
+              disabled={!(connectionStatus?.vector_store_connected && connectionStatus?.document_count > 0)}
               className="w-full bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-primary-foreground py-2 px-4 rounded-lg transition-colors"
             >
-              {connectionStatus?.vector_store_connected ? 'Search' : 'Setup Required'}
+              {(connectionStatus?.vector_store_connected && connectionStatus?.document_count > 0) ? 'Search' : 'Setup Required'}
             </button>
           </form>
         </div>
@@ -258,7 +284,7 @@ export default function DashboardContent({ platform, onPageChange }: DashboardCo
             }
           </p>
 
-          {!connectionStatus?.vector_store_connected ? (
+          {!(connectionStatus?.vector_store_connected && connectionStatus?.document_count > 0) ? (
             <div className="text-center py-8 text-muted-foreground">
               <Database className="h-12 w-12 mx-auto mb-4 opacity-50" />
               <p>Complete the initial data ingestion to see duplicate detection results.</p>
