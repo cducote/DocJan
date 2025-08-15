@@ -14,11 +14,19 @@ spec:
       labels:
         app: concatly-api
     spec:
+      securityContext:
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
       containers:
       - name: concatly-api
-        image: 039612881134.dkr.ecr.us-east-1.amazonaws.com/concatly-cluster-api:amd64
+        image: 039612881134.dkr.ecr.us-east-1.amazonaws.com/concatly-cluster-api:chromadb-fix
         ports:
         - containerPort: 8000
+        securityContext:
+          runAsUser: 999
+          runAsGroup: 999
+          allowPrivilegeEscalation: false
         env:
         - name: OPENAI_API_KEY
           valueFrom:

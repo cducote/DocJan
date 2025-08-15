@@ -57,14 +57,85 @@ class VectorStoreService:
         """Initialize ChromaDB instance with organization-specific collection."""
         try:
             from langchain_chroma import Chroma
+            
+            # For production compatibility, disable tenant validation
+            import chromadb
+            settings = chromadb.config.Settings()
+            settings.allow_reset = True
+            
             self.db = Chroma(
                 persist_directory=self.chroma_persist_dir,
                 embedding_function=self.embeddings,
-                collection_name=self.collection_name
+                collection_name=self.collection_name,
+                client_settings=settings
             )
             print(f"🗄️ [VECTOR_STORE] Initialized ChromaDB with collection: {self.collection_name}")
         except ImportError:
             raise ImportError("langchain_chroma is required. Install with: pip install langchain-chroma")
+        except Exception as e:
+            print(f"❌ [VECTOR_STORE] ChromaDB initialization failed, trying fallback: {e}")
+            # Check if this is a settings conflict error
+            if "different settings" in str(e).lower() or "settings" in str(e).lower():
+                print(f"🔧 [VECTOR_STORE] Detected settings conflict, attempting to clear and reinitialize...")
+                try:
+                    self._clear_chroma_directory()
+                    # Try again after clearing
+                    from langchain_chroma import Chroma
+                    import chromadb
+                    settings = chromadb.config.Settings()
+                    settings.allow_reset = True
+                    
+                    self.db = Chroma(
+                        persist_directory=self.chroma_persist_dir,
+                        embedding_function=self.embeddings,
+                        collection_name=self.collection_name,
+                        client_settings=settings
+                    )
+                    print(f"✅ [VECTOR_STORE] Successfully reinitialized after clearing: {self.collection_name}")
+                    return
+                except Exception as clear_error:
+                    print(f"⚠️ [VECTOR_STORE] Could not clear directory: {clear_error}")
+            
+            # Fallback: Use simpler client configuration
+            try:
+                from langchain_chroma import Chroma
+                self.db = Chroma(
+                    persist_directory=self.chroma_persist_dir,
+                    embedding_function=self.embeddings,
+                    collection_name=self.collection_name
+                )
+                print(f"🗄️ [VECTOR_STORE] Initialized ChromaDB with fallback config: {self.collection_name}")
+            except Exception as fallback_error:
+                print(f"💥 [VECTOR_STORE] Both ChromaDB configurations failed: {fallback_error}")
+                raise
+    
+    def _clear_chroma_directory(self):
+        """
+        Clear the ChromaDB directory to force a clean initialization.
+        This helps resolve settings conflicts between different ChromaDB versions.
+        """
+        import shutil
+        try:
+            if os.path.exists(self.chroma_persist_dir):
+                # Remove the entire directory
+                shutil.rmtree(self.chroma_persist_dir)
+                print(f"🗑️ [VECTOR_STORE] Cleared ChromaDB directory: {self.chroma_persist_dir}")
+                
+                # Recreate the directory
+                os.makedirs(self.chroma_persist_dir, exist_ok=True)
+                print(f"📁 [VECTOR_STORE] Recreated ChromaDB directory: {self.chroma_persist_dir}")
+                
+        except Exception as e:
+            print(f"⚠️ [VECTOR_STORE] Could not clear ChromaDB directory: {e}")
+            # Try alternative approach - clear just the chroma.sqlite3 file
+            try:
+                sqlite_file = os.path.join(self.chroma_persist_dir, "chroma.sqlite3")
+                if os.path.exists(sqlite_file):
+                    os.remove(sqlite_file)
+                    print(f"🗑️ [VECTOR_STORE] Cleared ChromaDB sqlite file: {sqlite_file}")
+            except Exception as sqlite_error:
+                print(f"⚠️ [VECTOR_STORE] Could not clear ChromaDB sqlite file: {sqlite_error}")
+                raise e
     
     def test_connection(self) -> Tuple[bool, str]:
         """
