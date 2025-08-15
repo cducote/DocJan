@@ -7,6 +7,7 @@ set -e
 FORCE_BUILD=false
 SKIP_BUILD=false
 DEPLOY_ONLY=false
+SKIP_CLEANUP=false
 IMAGE_TAG="latest"
 
 while [[ $# -gt 0 ]]; do
@@ -24,9 +25,33 @@ while [[ $# -gt 0 ]]; do
       SKIP_BUILD=true
       shift
       ;;
+    --skip-cleanup)
+      SKIP_CLEANUP=true
+      shift
+      ;;
     --tag)
       IMAGE_TAG="$2"
       shift 2
+      ;;
+    --help|-h)
+      echo "Concatly Deployment Script"
+      echo ""
+      echo "Usage: ./deploy.sh [OPTIONS] [IMAGE_TAG]"
+      echo ""
+      echo "Options:"
+      echo "  --force-build    Force rebuild even if image exists"
+      echo "  --skip-build     Skip Docker build step"
+      echo "  --deploy-only    Only deploy (skip build and push)"
+      echo "  --skip-cleanup   Skip ECR image cleanup (keeps old images)"
+      echo "  --tag TAG        Specify image tag (default: latest)"
+      echo "  --help, -h       Show this help message"
+      echo ""
+      echo "Examples:"
+      echo "  ./deploy.sh                    # Deploy with 'latest' tag and cleanup"
+      echo "  ./deploy.sh v1.2.3             # Deploy with specific tag"
+      echo "  ./deploy.sh --skip-cleanup     # Deploy without cleaning up old images"
+      echo "  ./deploy.sh --force-build v2.0 # Force rebuild with specific tag"
+      exit 0
       ;;
     *)
       IMAGE_TAG="$1"
@@ -37,7 +62,7 @@ done
 
 echo "🚀 Starting deployment process..."
 echo "📝 Image tag: $IMAGE_TAG"
-echo "🔧 Options: Force build=$FORCE_BUILD, Skip build=$SKIP_BUILD, Deploy only=$DEPLOY_ONLY"
+echo "🔧 Options: Force build=$FORCE_BUILD, Skip build=$SKIP_BUILD, Deploy only=$DEPLOY_ONLY, Skip cleanup=$SKIP_CLEANUP"
 
 # Change to project root directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -72,6 +97,42 @@ check_local_image_exists() {
         echo "❌ Image $IMAGE_TAG not found locally"
         return 1
     fi
+}
+
+# Function to cleanup old ECR images (keep only current deployment + new image)
+cleanup_old_images() {
+    echo "🧹 Cleaning up old ECR images to save storage costs..."
+    
+    # Get current image tag from running deployment
+    CURRENT_IMAGE=$(kubectl get deployment concatly-api -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null | sed 's/.*://')
+    
+    if [ -z "$CURRENT_IMAGE" ]; then
+        echo "⚠️  Could not determine current deployment image, skipping cleanup"
+        return
+    fi
+    
+    echo "📝 Current deployment uses: $CURRENT_IMAGE"
+    echo "📝 New image will be: $IMAGE_TAG"
+    
+    # Get all image tags from ECR
+    ALL_TAGS=$(aws ecr describe-images --repository-name "concatly-cluster-api" --region $AWS_REGION --query 'imageDetails[?imageTags!=null].imageTags[]' --output text 2>/dev/null || echo "")
+    
+    if [ -z "$ALL_TAGS" ]; then
+        echo "⚠️  Could not list ECR images, skipping cleanup"
+        return
+    fi
+    
+    # Delete images that are not current or new
+    for tag in $ALL_TAGS; do
+        if [ "$tag" != "$CURRENT_IMAGE" ] && [ "$tag" != "$IMAGE_TAG" ]; then
+            echo "🗑️  Deleting old image: $tag"
+            aws ecr batch-delete-image --repository-name "concatly-cluster-api" --region $AWS_REGION --image-ids imageTag=$tag >/dev/null 2>&1 || echo "⚠️  Failed to delete $tag"
+        else
+            echo "✅ Keeping image: $tag"
+        fi
+    done
+    
+    echo "🎯 ECR cleanup complete - maintaining only current and new images"
 }
 
 # Build and push logic
@@ -136,7 +197,15 @@ kubectl apply -f k8s/
 echo "⏳ Waiting for deployment to complete..."
 kubectl rollout status deployment/concatly-api
 
-# Step 8: Get LoadBalancer URL
+# Step 8: Cleanup old ECR images after successful deployment
+if [ "$SKIP_CLEANUP" = false ]; then
+  echo "🧹 Cleaning up old ECR images..."
+  cleanup_old_images
+else
+  echo "⏭️  Skipping ECR cleanup (--skip-cleanup flag used)"
+fi
+
+# Step 9: Get LoadBalancer URL
 echo "🌐 Getting LoadBalancer URL..."
 LB_URL=$(kubectl get svc concatly-api-service -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
 echo "✅ Deployment complete!"
