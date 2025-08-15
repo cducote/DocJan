@@ -31,9 +31,16 @@ class VectorStoreService:
         
         # Generate collection name based on organization
         if organization_id:
-            self.collection_name = f"org_{organization_id}"
+            # Handle case where organization_id already has org_ prefix to avoid double prefixing
+            if organization_id.startswith("org_"):
+                self.collection_name = organization_id
+                self.cache_collection_name = f"{organization_id}_cache"
+            else:
+                self.collection_name = f"org_{organization_id}"
+                self.cache_collection_name = f"org_{organization_id}_cache"
         else:
             self.collection_name = "default"  # Fallback for legacy support
+            self.cache_collection_name = "default_cache"
         
         if not self.openai_api_key:
             raise ValueError("OpenAI API key is required. Set OPENAI_API_KEY environment variable or pass it directly.")
@@ -69,7 +76,17 @@ class VectorStoreService:
                 collection_name=self.collection_name,
                 client_settings=settings
             )
+            
+            # Initialize separate cache collection for duplicate pairs
+            self.cache_db = Chroma(
+                persist_directory=self.chroma_persist_dir,
+                embedding_function=self.embeddings,
+                collection_name=self.cache_collection_name,
+                client_settings=settings
+            )
+            
             print(f"🗄️ [VECTOR_STORE] Initialized ChromaDB with collection: {self.collection_name}")
+            print(f"🗄️ [VECTOR_STORE] Initialized cache collection: {self.cache_collection_name}")
         except ImportError:
             raise ImportError("langchain_chroma is required. Install with: pip install langchain-chroma")
         except Exception as e:
@@ -91,7 +108,17 @@ class VectorStoreService:
                         collection_name=self.collection_name,
                         client_settings=settings
                     )
+                    
+                    # Initialize separate cache collection for duplicate pairs
+                    self.cache_db = Chroma(
+                        persist_directory=self.chroma_persist_dir,
+                        embedding_function=self.embeddings,
+                        collection_name=self.cache_collection_name,
+                        client_settings=settings
+                    )
+                    
                     print(f"✅ [VECTOR_STORE] Successfully reinitialized after clearing: {self.collection_name}")
+                    print(f"✅ [VECTOR_STORE] Successfully reinitialized cache collection: {self.cache_collection_name}")
                     return
                 except Exception as clear_error:
                     print(f"⚠️ [VECTOR_STORE] Could not clear directory: {clear_error}")
@@ -104,7 +131,16 @@ class VectorStoreService:
                     embedding_function=self.embeddings,
                     collection_name=self.collection_name
                 )
+                
+                # Initialize separate cache collection for duplicate pairs
+                self.cache_db = Chroma(
+                    persist_directory=self.chroma_persist_dir,
+                    embedding_function=self.embeddings,
+                    collection_name=self.cache_collection_name
+                )
+                
                 print(f"🗄️ [VECTOR_STORE] Initialized ChromaDB with fallback config: {self.collection_name}")
+                print(f"🗄️ [VECTOR_STORE] Initialized cache collection with fallback config: {self.cache_collection_name}")
             except Exception as fallback_error:
                 print(f"💥 [VECTOR_STORE] Both ChromaDB configurations failed: {fallback_error}")
                 raise
@@ -260,19 +296,41 @@ class VectorStoreService:
     
     def clear_all_documents(self) -> Tuple[bool, str]:
         """
-        Clear all documents from the vector store.
+        Clear all documents from the vector store and cache.
         
         Returns:
             Tuple of (success, message)
         """
         try:
-            # Get all document IDs
+            # Get all document IDs from main collection
             all_docs = self.db.get()
+            docs_cleared = 0
+            
             if all_docs['ids']:
                 self.db.delete(all_docs['ids'])
-                return True, f"Cleared {len(all_docs['ids'])} documents from vector store"
-            else:
-                return True, "Vector store was already empty"
+                docs_cleared = len(all_docs['ids'])
+            
+            # Also clear the cache collection
+            try:
+                cache_docs = self.cache_db.get()
+                cache_cleared = 0
+                if cache_docs['ids']:
+                    self.cache_db.delete(cache_docs['ids'])
+                    cache_cleared = len(cache_docs['ids'])
+                
+                total_cleared = docs_cleared + cache_cleared
+                if total_cleared > 0:
+                    return True, f"Cleared {docs_cleared} documents and {cache_cleared} cached items from vector store"
+                else:
+                    return True, "Vector store was already empty"
+            except Exception as cache_error:
+                # If cache clearing fails, still report success for main collection
+                print(f"Warning: Failed to clear cache collection: {cache_error}")
+                if docs_cleared > 0:
+                    return True, f"Cleared {docs_cleared} documents from vector store (cache clear failed)"
+                else:
+                    return True, "Vector store was already empty"
+                    
         except Exception as e:
             return False, f"Error clearing vector store: {str(e)}"
     
@@ -442,9 +500,9 @@ class VectorStoreService:
         try:
             # First, clear existing cached pairs
             try:
-                existing_pairs = self.db.get(where={"doc_type": "duplicate_pair"})
+                existing_pairs = self.cache_db.get(where={"doc_type": "duplicate_pair"})
                 if existing_pairs['ids']:
-                    self.db.delete(existing_pairs['ids'])
+                    self.cache_db.delete(existing_pairs['ids'])
                     print(f"🗑️ [CACHE] Cleared {len(existing_pairs['ids'])} old cached pairs")
             except Exception as e:
                 print(f"⚠️ [CACHE] Could not clear old pairs: {e}")
@@ -462,13 +520,13 @@ class VectorStoreService:
                     'id': i + 1,
                     'page1': {
                         'title': metadata_i.get('title', f'Document {doc_i_idx+1}'),
-                        'url': metadata_i.get('url', ''),
-                        'space': metadata_i.get('space', '')
+                        'url': metadata_i.get('source', ''),
+                        'space': metadata_i.get('space_name', metadata_i.get('space_key', 'Unknown'))
                     },
                     'page2': {
                         'title': metadata_j.get('title', f'Document {doc_j_idx+1}'),
-                        'url': metadata_j.get('url', ''),
-                        'space': metadata_j.get('space', '')
+                        'url': metadata_j.get('source', ''),
+                        'space': metadata_j.get('space_name', metadata_j.get('space_key', 'Unknown'))
                     },
                     'similarity': round(similarity_score, 3),
                     'status': 'pending'
@@ -486,7 +544,7 @@ class VectorStoreService:
                 ))
             
             if cached_documents:
-                self.db.add_documents(cached_documents)
+                self.cache_db.add_documents(cached_documents)
                 print(f"💾 [CACHE] Cached {len(cached_documents)} duplicate pairs for fast retrieval")
                 
         except Exception as e:
@@ -504,7 +562,7 @@ class VectorStoreService:
         try:
             # Try to get cached duplicate pairs first
             try:
-                cached_pairs = self.db.get(where={"doc_type": "duplicate_pair"})
+                cached_pairs = self.cache_db.get(where={"doc_type": "duplicate_pair"})
                 if cached_pairs['documents']:
                     all_pairs = [eval(doc) for doc in cached_pairs['documents']]
                     # Filter out resolved pairs
@@ -643,7 +701,7 @@ class VectorStoreService:
         try:
             # First, try to get cached duplicate pairs and update them
             try:
-                cached_pairs = self.db.get(where={"doc_type": "duplicate_pair"})
+                cached_pairs = self.cache_db.get(where={"doc_type": "duplicate_pair"})
                 if cached_pairs['documents']:
                     pairs_list = [eval(doc) for doc in cached_pairs['documents']]
                     
@@ -658,23 +716,16 @@ class VectorStoreService:
                     
                     if pair_found:
                         # Remove all cached duplicate pairs and re-add them with updated status
-                        self.db.delete(where={"doc_type": "duplicate_pair"})
+                        self.cache_db.delete(where={"doc_type": "duplicate_pair"})
                         print(f"🗑️ Removed old cached duplicate pairs")
                         
                         # Re-add updated pairs
-                        from langchain.schema import Document
-                        cached_documents = []
-                        for pair in pairs_list:
-                            doc = Document(
-                                page_content=str(pair),
-                                metadata={"doc_type": "duplicate_pair", "pair_id": pair.get('id')}
+                        for i, pair in enumerate(pairs_list):
+                            self.cache_db.add(
+                                documents=[str(pair)],
+                                metadatas=[{"doc_type": "duplicate_pair", "pair_id": pair.get('id')}],
+                                ids=[f"duplicate_pair_{pair.get('id', i)}"]
                             )
-                            cached_documents.append(doc)
-                        
-                        if cached_documents:
-                            # Generate unique IDs for each document
-                            doc_ids = [f"duplicate_pair_{pair.get('id', i)}" for i, pair in enumerate(pairs_list)]
-                            self.db.add_documents(cached_documents, ids=doc_ids)
                         
                         print(f"💾 Persisted {len(pairs_list)} duplicate pairs with updated status")
                         return True
@@ -686,13 +737,11 @@ class VectorStoreService:
                 
             # Fallback: Store a simple resolved marker for this pair
             try:
-                from langchain.schema import Document
-                resolved_doc = Document(
-                    page_content=f"resolved_pair_{pair_id}",
-                    metadata={"doc_type": "resolved_pair", "pair_id": pair_id}
+                self.db.add(
+                    documents=[f"resolved_pair_{pair_id}"],
+                    metadatas=[{"doc_type": "resolved_pair", "pair_id": pair_id}],
+                    ids=[f"resolved_pair_{pair_id}"]
                 )
-                
-                self.db.add_documents([resolved_doc], ids=[f"resolved_pair_{pair_id}"])
                 print(f"✅ Stored resolved marker for pair {pair_id}")
                 return True
                 

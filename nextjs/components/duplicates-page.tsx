@@ -184,7 +184,7 @@ export default function ContentReportPage({ platform }: ContentReportPageProps) 
                       <h3 className="font-medium text-foreground mb-2 leading-tight">
                         {pair.page1.title}
                       </h3>
-                      {pair.page1.space && (
+                      {pair.page1.space && pair.page1.space.trim() !== '' && (
                         <div className="text-sm text-muted-foreground mb-3 flex items-center">
                           <span className="bg-muted px-2 py-1 rounded text-xs">
                             Space: {getReadableSpaceName(pair.page1.space)}

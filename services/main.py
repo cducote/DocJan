@@ -494,7 +494,36 @@ async def get_duplicate_summary(organization_id: Optional[str] = None):
         raise HTTPException(status_code=500, detail=f"Failed to get duplicate summary: {str(e)}")
 
 
-# Clear all data
+# Clear all data for organization
+@app.post("/clear-organization-data")
+async def clear_organization_data(request: ConnectionStatusRequest):
+    """Clear all documents and cache from the vector store for a specific organization."""
+    try:
+        organization_id = request.organization_id
+        if not organization_id:
+            raise HTTPException(status_code=400, detail="Organization ID is required")
+            
+        print(f"🗑️ [CLEAR] Clearing all data for organization: {organization_id}")
+        
+        # Get the organization-specific vector store
+        vs_service = get_vector_store_for_organization(organization_id)
+        
+        success, message = vs_service.clear_all_documents()
+        
+        if not success:
+            raise HTTPException(status_code=500, detail=message)
+        
+        print(f"✅ [CLEAR] Successfully cleared data for organization: {organization_id}")
+        return {"success": True, "message": message, "organization_id": organization_id}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ [CLEAR] Error clearing data: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to clear organization data: {str(e)}")
+
+
+# Clear all data (legacy endpoint - kept for backward compatibility)
 @app.delete("/clear")
 async def clear_all_data(organization_id: Optional[str] = None):
     """Clear all documents from the vector store."""
