@@ -39,6 +39,12 @@ echo "🚀 Starting deployment process..."
 echo "📝 Image tag: $IMAGE_TAG"
 echo "🔧 Options: Force build=$FORCE_BUILD, Skip build=$SKIP_BUILD, Deploy only=$DEPLOY_ONLY"
 
+# Change to project root directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+cd "$PROJECT_ROOT"
+echo "📁 Working from project root: $(pwd)"
+
 # Configuration
 AWS_REGION="us-east-1"
 ECR_REPOSITORY="039612881134.dkr.ecr.us-east-1.amazonaws.com/concatly-cluster-api"
