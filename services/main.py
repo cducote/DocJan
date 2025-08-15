@@ -32,16 +32,45 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Import our service modules
-from confluence_service import ConfluenceService, ConfluenceConfig
-from vector_store_service import VectorStoreService, VectorStoreConfig
+from .confluence_service import ConfluenceService, ConfluenceConfig
+from .vector_store_service import VectorStoreService, VectorStoreConfig
 
 # Import logging
-import sys
-sys.path.append('..')
-from utils.logging_config import get_logger, log_startup, log_shutdown, log_api_request, log_api_response, log_error_with_context
+import logging
+
+# Configure basic logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s | %(levelname)-8s | %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
 
 # Initialize logger
-logger = get_logger("main")
+logger = logging.getLogger("main")
+
+# Define logging helper functions
+def log_startup(message):
+    logger.info(f"🚀 {message}")
+
+def log_shutdown(message):
+    logger.info(f"🛑 {message}")
+
+def log_api_request(endpoint, method="", **kwargs):
+    extra_info = " | ".join([f"{k}: {v}" for k, v in kwargs.items()]) if kwargs else ""
+    logger.info(f"📨 API {method} {endpoint}{' | ' + extra_info if extra_info else ''}")
+
+def log_api_response(logger_param, endpoint, status_code, duration_ms=None, **kwargs):
+    duration_info = f" | {duration_ms:.1f}ms" if duration_ms else ""
+    extra_info = " | ".join([f"{k}: {v}" for k, v in kwargs.items()]) if kwargs else ""
+    status_emoji = "✅" if status_code < 400 else "❌"
+    logger.info(f"{status_emoji} API {endpoint} → {status_code}{duration_info}{' | ' + extra_info if extra_info else ''}")
+
+def log_error_with_context(logger_param, error, context="", **kwargs):
+    import traceback
+    context_info = f" | Context: {context}" if context else ""
+    extra_info = " | ".join([f"{k}: {v}" for k, v in kwargs.items()]) if kwargs else ""
+    logger.error(f"💥 ERROR: {str(error)}{context_info}{' | ' + extra_info if extra_info else ''}")
+    logger.debug(f"🔍 Full traceback:\n{traceback.format_exc()}")
 
 # Initialize FastAPI app
 app = FastAPI(

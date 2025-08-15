@@ -20,7 +20,7 @@ spec:
         fsGroup: 999
       containers:
       - name: concatly-api
-        image: 039612881134.dkr.ecr.us-east-1.amazonaws.com/concatly-cluster-api:chromadb-fix
+        image: 039612881134.dkr.ecr.us-east-1.amazonaws.com/concatly-cluster-api:cost-fix-v1
         ports:
         - containerPort: 8000
         securityContext:

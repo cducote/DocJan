@@ -209,7 +209,6 @@ def scan_for_duplicates(similarity_threshold=0.65, update_existing=True):
         from sklearn.metrics.pairwise import cosine_similarity
         import pytz
         from datetime import datetime
-        from utils.helpers import Document
         
         # Get all documents from ChromaDB
         all_docs = db.get()
@@ -315,6 +314,8 @@ def scan_for_duplicates(similarity_threshold=0.65, update_existing=True):
         updated_count = 0
         if documents_to_update:
             try:
+                from langchain.schema import Document
+                
                 # Delete existing documents
                 ids_to_update = [item['id'] for item in documents_to_update]
                 db.delete(ids_to_update)
@@ -604,7 +605,7 @@ def get_detected_duplicates(space_filter=None, cross_space_only=False, within_sp
 def update_chroma_after_merge(main_doc, similar_doc, keep_main=True):
     """Update Chroma database after successful merge to remove duplicate relationships"""
     try:
-        from utils.helpers import Document
+        from langchain.schema import Document
         
         # Get the doc_id of the document we're keeping and the one we're removing
         main_doc_id = main_doc.metadata.get('doc_id', '')

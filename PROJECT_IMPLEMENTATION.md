@@ -387,6 +387,40 @@ kubectl logs -f deployment/concatly-api
 kubectl rollout undo deployment/concatly-api
 ```
 
+### Production Database Cleanup
+```bash
+# 1. Interactive Mode (Safest - shows what will be deleted)
+./scripts/production-cleanup.sh
+# Or directly with kubectl
+kubectl exec -it $(kubectl get pods -l app=concatly-api -o jsonpath='{.items[0].metadata.name}') -- python cleanup_db.py
+
+# 2. Quick List Collections
+./scripts/production-cleanup.sh list
+
+# 3. Delete Specific Collection
+./scripts/production-cleanup.sh delete-collection org_old_data
+
+# 4. Direct kubectl exec for any Python command
+kubectl exec $(kubectl get pods -l app=concatly-api -o jsonpath='{.items[0].metadata.name}') -- python -c "
+import chromadb
+from config.environment import get_chroma_persist_directory
+client = chromadb.PersistentClient(path=get_chroma_persist_directory())
+collections = client.list_collections()
+for c in collections: print(f'{c.name}: {c.count()} docs')
+"
+
+# 5. Emergency Total Database Reset (USE WITH EXTREME CAUTION)
+kubectl exec -it $(kubectl get pods -l app=concatly-api -o jsonpath='{.items[0].metadata.name}') -- python cleanup_db.py
+# Then select option 4 and type 'DELETE_EVERYTHING'
+```
+
+**Production Cleanup Features:**
+- **Safe**: Interactive script shows exactly what will be deleted before doing it
+- **Persistent Volume**: ChromaDB data persists across pod restarts due to PVC setup
+- **No Downtime**: Can run cleanup while service is running
+- **Audit Trail**: All kubectl commands are logged
+- **Rollback Safety**: Persistent volume means you can always redeploy if something goes wrong
+
 ### Debugging
 ```bash
 # Check connection status

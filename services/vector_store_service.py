@@ -176,6 +176,7 @@ class VectorStoreService:
     def test_connection(self) -> Tuple[bool, str]:
         """
         Test vector store connection and embedding generation.
+        WARNING: This makes an OpenAI API call and should NOT be used in health checks!
         
         Returns:
             Tuple of (success, message)
@@ -192,6 +193,24 @@ class VectorStoreService:
             collection_count = len(self.db.get()['ids'])
             
             return True, f"Vector store connected successfully. Collection: {self.collection_name}, Documents: {collection_count}, Embedding dimension: {len(embedding)}"
+            
+        except Exception as e:
+            return False, f"Vector store connection failed: {str(e)}"
+
+    def test_connection_lightweight(self) -> Tuple[bool, str]:
+        """
+        Lightweight connection test that doesn't make expensive API calls.
+        Safe for health checks and frequent monitoring.
+        
+        Returns:
+            Tuple of (success, message)
+        """
+        try:
+            # Only test ChromaDB connection - no OpenAI API calls
+            collection_count = len(self.db.get()['ids'])
+            cache_count = len(self.cache_db.get()['ids'])
+            
+            return True, f"Vector store healthy. Collection: {self.collection_name} ({collection_count} docs), Cache: ({cache_count} items)"
             
         except Exception as e:
             return False, f"Vector store connection failed: {str(e)}"

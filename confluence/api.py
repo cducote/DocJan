@@ -10,23 +10,20 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 try:
-    # Import centralized config and logging
+    # Import centralized config
     from config.environment import config
-    from utils.logging_config import get_logger
     use_centralized_config = True
 except ImportError as e:
     print(f"Warning: Could not import centralized config: {e}")
     use_centralized_config = False
     config = None
-    
-    # Create a simple logger fallback
-    class SimpleLogger:
-        def info(self, msg, exc_info=False): print(f"INFO: {msg}")
-        def error(self, msg, exc_info=False): print(f"ERROR: {msg}")
-        def warning(self, msg, exc_info=False): print(f"WARNING: {msg}")
-        def debug(self, msg, exc_info=False): print(f"DEBUG: {msg}")
-    
-    get_logger = lambda name: SimpleLogger()
+
+# Create a simple logger
+import logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s | %(levelname)s | %(message)s')
+
+def get_logger(name):
+    return logging.getLogger(name)
 
 # Initialize logger
 logger = get_logger(__name__)
