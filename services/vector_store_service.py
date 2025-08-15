@@ -496,17 +496,21 @@ class VectorStoreService:
         """
         Get all detected duplicate pairs from the vector store.
         Fast implementation using cached duplicate pairs.
+        Filters out resolved pairs so they don't appear in Content Report.
         
         Returns:
-            List of duplicate pair dictionaries
+            List of duplicate pair dictionaries (only pending status)
         """
         try:
             # Try to get cached duplicate pairs first
             try:
                 cached_pairs = self.db.get(where={"doc_type": "duplicate_pair"})
                 if cached_pairs['documents']:
-                    print(f"🚀 [DUPLICATES] Found {len(cached_pairs['documents'])} cached duplicate pairs")
-                    return [eval(doc) for doc in cached_pairs['documents']]
+                    all_pairs = [eval(doc) for doc in cached_pairs['documents']]
+                    # Filter out resolved pairs
+                    pending_pairs = [pair for pair in all_pairs if pair.get('status', 'pending') != 'resolved']
+                    print(f"🚀 [DUPLICATES] Found {len(pending_pairs)} pending duplicate pairs (filtered out {len(all_pairs) - len(pending_pairs)} resolved)")
+                    return pending_pairs
             except Exception as e:
                 print(f"⚠️ [DUPLICATES] No cached pairs found, falling back to metadata scan: {e}")
             
@@ -590,11 +594,162 @@ class VectorStoreService:
                         "status": "pending"
                     })
             
+            # Filter out resolved pairs by checking for resolved markers
+            try:
+                resolved_markers = self.db.get(where={"doc_type": "resolved_pair"})
+                resolved_pair_ids = set()
+                
+                if resolved_markers.get('metadatas'):
+                    for metadata in resolved_markers['metadatas']:
+                        if metadata.get('pair_id'):
+                            resolved_pair_ids.add(metadata['pair_id'])
+                
+                if resolved_pair_ids:
+                    original_count = len(duplicate_pairs)
+                    duplicate_pairs = [pair for pair in duplicate_pairs if pair['id'] not in resolved_pair_ids]
+                    filtered_count = original_count - len(duplicate_pairs)
+                    if filtered_count > 0:
+                        print(f"🔍 [DUPLICATES] Filtered out {filtered_count} resolved pairs from fallback method")
+                        
+            except Exception as e:
+                print(f"⚠️ [DUPLICATES] Could not check for resolved markers: {e}")
+            
             return duplicate_pairs
             
         except Exception as e:
             print(f"Error getting duplicates: {e}")
             return []
+
+    def get_duplicate_pairs(self) -> List[Dict[str, Any]]:
+        """
+        Get all detected duplicate pairs. Alias for get_duplicates for consistency.
+        
+        Returns:
+            List of duplicate pair dictionaries
+        """
+        return self.get_duplicates()
+
+    def mark_pair_as_resolved(self, pair_id: int) -> bool:
+        """
+        Mark a duplicate pair as resolved so it won't appear in future duplicate reports.
+        Persists the resolved status to ChromaDB for permanent storage.
+        
+        Args:
+            pair_id: ID of the duplicate pair to mark as resolved
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            # First, try to get cached duplicate pairs and update them
+            try:
+                cached_pairs = self.db.get(where={"doc_type": "duplicate_pair"})
+                if cached_pairs['documents']:
+                    pairs_list = [eval(doc) for doc in cached_pairs['documents']]
+                    
+                    # Find and update the specific pair
+                    pair_found = False
+                    for pair in pairs_list:
+                        if pair.get('id') == pair_id:
+                            pair['status'] = 'resolved'
+                            pair_found = True
+                            print(f"✅ Found and updated pair {pair_id} to resolved status")
+                            break
+                    
+                    if pair_found:
+                        # Remove all cached duplicate pairs and re-add them with updated status
+                        self.db.delete(where={"doc_type": "duplicate_pair"})
+                        print(f"🗑️ Removed old cached duplicate pairs")
+                        
+                        # Re-add updated pairs
+                        from langchain.schema import Document
+                        cached_documents = []
+                        for pair in pairs_list:
+                            doc = Document(
+                                page_content=str(pair),
+                                metadata={"doc_type": "duplicate_pair", "pair_id": pair.get('id')}
+                            )
+                            cached_documents.append(doc)
+                        
+                        if cached_documents:
+                            # Generate unique IDs for each document
+                            doc_ids = [f"duplicate_pair_{pair.get('id', i)}" for i, pair in enumerate(pairs_list)]
+                            self.db.add_documents(cached_documents, ids=doc_ids)
+                        
+                        print(f"💾 Persisted {len(pairs_list)} duplicate pairs with updated status")
+                        return True
+                    else:
+                        print(f"⚠️ Duplicate pair {pair_id} not found in cached pairs")
+                        
+            except Exception as e:
+                print(f"⚠️ Could not update cached pairs: {e}")
+                
+            # Fallback: Store a simple resolved marker for this pair
+            try:
+                from langchain.schema import Document
+                resolved_doc = Document(
+                    page_content=f"resolved_pair_{pair_id}",
+                    metadata={"doc_type": "resolved_pair", "pair_id": pair_id}
+                )
+                
+                self.db.add_documents([resolved_doc], ids=[f"resolved_pair_{pair_id}"])
+                print(f"✅ Stored resolved marker for pair {pair_id}")
+                return True
+                
+            except Exception as e:
+                print(f"❌ Failed to store resolved marker: {e}")
+                return False
+            
+        except Exception as e:
+            print(f"❌ Error marking pair {pair_id} as resolved: {e}")
+            return False
+
+    def get_document_by_metadata(self, page_metadata: Dict[str, str]) -> Optional[Dict[str, Any]]:
+        """
+        Get full document content by matching metadata (title, URL, etc.).
+        
+        Args:
+            page_metadata: Dictionary containing title, url, and other metadata to match
+            
+        Returns:
+            Dictionary with content and metadata, or None if not found
+        """
+        try:
+            all_docs = self.db.get()
+            
+            if not all_docs['documents']:
+                return None
+            
+            target_title = page_metadata.get('title', '').strip()
+            target_url = page_metadata.get('url', '').strip()
+            
+            # Try to find by exact title and URL match first
+            for i, metadata in enumerate(all_docs['metadatas']):
+                doc_title = metadata.get('title', '').strip()
+                doc_url = metadata.get('source', '').strip()
+                
+                if doc_title == target_title and doc_url == target_url:
+                    return {
+                        'content': all_docs['documents'][i],
+                        'metadata': metadata
+                    }
+            
+            # Fallback: try to find by title only
+            for i, metadata in enumerate(all_docs['metadatas']):
+                doc_title = metadata.get('title', '').strip()
+                
+                if doc_title == target_title:
+                    return {
+                        'content': all_docs['documents'][i],
+                        'metadata': metadata
+                    }
+            
+            print(f"⚠️ [DOCUMENT LOOKUP] Could not find document with title: {target_title}")
+            return None
+            
+        except Exception as e:
+            print(f"❌ [DOCUMENT LOOKUP] Error retrieving document: {e}")
+            return None
 
 
 class VectorStoreConfig:
@@ -608,13 +763,26 @@ class VectorStoreConfig:
         Returns:
             Tuple of (chroma_persist_dir, openai_api_key)
         """
-        chroma_persist_dir = os.getenv('CHROMA_PERSIST_DIRECTORY', './chroma_store')
-        openai_api_key = os.getenv('OPENAI_API_KEY')
-        
-        if not openai_api_key:
-            raise ValueError("OPENAI_API_KEY environment variable is required")
-        
-        return chroma_persist_dir, openai_api_key
+        # Use centralized configuration
+        try:
+            import sys
+            from pathlib import Path
+            sys.path.append(str(Path(__file__).parent.parent))
+            from config.environment import config
+            
+            chroma_persist_dir = config.chroma_persist_directory
+            openai_api_key = config.openai_api_key
+            
+            return chroma_persist_dir, openai_api_key
+        except ImportError:
+            # Fallback to direct environment variables if config module not available
+            chroma_persist_dir = os.getenv('CHROMA_PERSIST_DIRECTORY', './chroma_store')
+            openai_api_key = os.getenv('OPENAI_API_KEY')
+            
+            if not openai_api_key:
+                raise ValueError("OPENAI_API_KEY environment variable is required")
+            
+            return chroma_persist_dir, openai_api_key
     
     @staticmethod
     def create_service_from_env(organization_id: Optional[str] = None) -> VectorStoreService:

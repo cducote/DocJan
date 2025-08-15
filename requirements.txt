@@ -35,6 +35,9 @@ atlassian-python-api>=3.41.0
 python-dotenv>=1.0.0
 pytz>=2023.3
 
+# AWS integration (for Secrets Manager in production)
+boto3>=1.35.0
+
 # Database (PostgreSQL)
 psycopg2-binary>=2.9.0
 sqlalchemy>=2.0.0

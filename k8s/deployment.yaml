@@ -28,17 +28,32 @@ spec:
           runAsGroup: 999
           allowPrivilegeEscalation: false
         env:
-        - name: OPENAI_API_KEY
-          valueFrom:
-            secretKeyRef:
-              name: concatly-secrets
-              key: openai-api-key
+        # AWS Configuration (for Secrets Manager)
+        - name: AWS_REGION
+          value: "us-east-1"
+        - name: AWS_DEFAULT_REGION
+          value: "us-east-1"
+        # Secret names in AWS Secrets Manager
+        - name: OPENAI_SECRET_NAME
+          value: "concatly/openai"
+        - name: CONFLUENCE_SECRET_NAME
+          value: "concatly/confluence"
+        # Application configuration
         - name: CHROMA_PERSIST_DIRECTORY
           value: "/app/chroma_store"
         - name: HOST
           value: "0.0.0.0"
         - name: PORT
           value: "8000"
+        - name: NODE_ENV
+          value: "production"
+        # Fallback to Kubernetes secrets if AWS Secrets Manager unavailable
+        - name: OPENAI_API_KEY_FALLBACK
+          valueFrom:
+            secretKeyRef:
+              name: concatly-secrets
+              key: openai-api-key
+              optional: true
         resources:
           limits:
             memory: "1Gi"

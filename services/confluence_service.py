@@ -169,13 +169,16 @@ class ConfluenceService:
                             title = doc.metadata.get('title', 'untitled')
                             doc_id = f"doc_{hashlib.md5(title.encode()).hexdigest()[:8]}"
                         
-                        # Enhance metadata
+                        # Get the actual space name from space key
+                        space_name = self.get_space_name_from_key(space_key)
+                        
+                        # Enhance metadata with both space key and space name
                         doc.metadata.update({
                             'space_key': space_key,
+                            'space_name': space_name,  # Now using actual space name
                             'doc_id': doc_id,
                             'processed_at': datetime.now(timezone.utc).isoformat(),
-                            'content_length': len(doc.page_content),
-                            'space_name': space_key  # Will be updated if we can get actual space name
+                            'content_length': len(doc.page_content)
                         })
                     
                     all_documents.extend(documents)

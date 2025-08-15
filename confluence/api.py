@@ -3,23 +3,132 @@ Confluence API operations for Concatly.
 """
 import requests
 import json
-from config.settings import get_confluence_auth, get_confluence_base_url
+import sys
+from pathlib import Path
 
-def get_available_spaces():
+# Add config directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+try:
+    # Import centralized config and logging
+    from config.environment import config
+    from utils.logging_config import get_logger
+    use_centralized_config = True
+except ImportError as e:
+    print(f"Warning: Could not import centralized config: {e}")
+    use_centralized_config = False
+    config = None
+    
+    # Create a simple logger fallback
+    class SimpleLogger:
+        def info(self, msg, exc_info=False): print(f"INFO: {msg}")
+        def error(self, msg, exc_info=False): print(f"ERROR: {msg}")
+        def warning(self, msg, exc_info=False): print(f"WARNING: {msg}")
+        def debug(self, msg, exc_info=False): print(f"DEBUG: {msg}")
+    
+    get_logger = lambda name: SimpleLogger()
+
+# Initialize logger
+logger = get_logger(__name__)
+
+def get_confluence_auth(user_credentials=None):
+    """Get Confluence authentication credentials."""
+    logger.info(f"🔍 get_confluence_auth called with user_credentials: {bool(user_credentials)}")
+    
+    if user_credentials:
+        logger.info("✅ Using provided user credentials for Confluence auth")
+        logger.info(f"🔍 User credentials keys: {list(user_credentials.keys())}")
+        logger.info(f"🔍 Raw user_credentials: {user_credentials}")
+        # Use provided user credentials
+        username = user_credentials.get('username')
+        api_token = user_credentials.get('apiKey') or user_credentials.get('api_token')
+        
+        if not username or not api_token:
+            logger.error("❌ Provided user credentials are incomplete")
+            logger.error(f"🔍 Username: {username}, API token: {bool(api_token)}")
+            raise ValueError("Provided user credentials are incomplete")
+        
+        logger.info(f"✅ Successfully using user credentials for username: {username}")
+        return (username, api_token)
+    
+    # Fallback to environment config
+    if config:
+        logger.info("🔐 Using centralized config for Confluence auth")
+        credentials = config.confluence_credentials
+        username = credentials['username']
+        api_token = credentials['api_token']
+        
+        if not username or not api_token:
+            logger.error("❌ Confluence credentials not configured in environment")
+            raise ValueError("Confluence credentials not configured in environment")
+        
+        return (username, api_token)
+    else:
+        # Fallback to direct environment variables
+        logger.info("🔐 Using direct environment variables for Confluence auth")
+        import os
+        username = os.getenv('CONFLUENCE_USERNAME')
+        api_token = os.getenv('CONFLUENCE_API_KEY') or os.getenv('CONFLUENCE_API_TOKEN')
+        
+        if not username or not api_token:
+            logger.error("❌ Confluence credentials not found in environment variables")
+            raise ValueError("Confluence credentials not configured")
+        
+        return (username, api_token)
+
+def get_confluence_base_url(user_credentials=None):
+    """Get Confluence base URL."""
+    logger.info(f"🔍 get_confluence_base_url called with user_credentials: {bool(user_credentials)}")
+    
+    if user_credentials:
+        logger.info("✅ Using provided user credentials for Confluence URL")
+        logger.info(f"🔍 User credentials keys: {list(user_credentials.keys())}")
+        # Use provided user credentials
+        base_url = user_credentials.get('baseUrl') or user_credentials.get('base_url')
+        if not base_url:
+            logger.error("❌ Provided user credentials missing baseUrl")
+            logger.error(f"🔍 Available keys in user_credentials: {list(user_credentials.keys())}")
+            raise ValueError("Provided user credentials missing baseUrl")
+        
+        logger.info(f"✅ Successfully using user base URL: {base_url}")
+        return base_url
+    
+    # Fallback to environment config
+    if config:
+        logger.info("🌐 Using centralized config for Confluence URL")
+        base_url = config.confluence_base_url
+        if not base_url:
+            logger.error("❌ Confluence base URL not configured in environment")
+            raise ValueError("Confluence base URL not configured in environment")
+        return base_url
+    else:
+        # Fallback to direct environment variables
+        logger.info("🌐 Using direct environment variables for Confluence URL")
+        import os
+        base_url = os.getenv('CONFLUENCE_BASE_URL')
+        if not base_url:
+            logger.error("❌ Confluence base URL not found in environment variables")
+            raise ValueError("Confluence base URL not configured")
+        return base_url
+
+def get_available_spaces(user_credentials=None):
     """
     Get all available Confluence spaces for the authenticated user
     
+    Args:
+        user_credentials (dict): User's Confluence credentials
+        
     Returns:
         list: List of dictionaries containing space information
     """
     try:
-        url = f"{get_confluence_base_url()}/rest/api/space"
+        url = f"{get_confluence_base_url(user_credentials)}/rest/api/space"
         params = {
             "limit": 200,  # Get up to 200 spaces
             "expand": "description.plain"
         }
         
-        response = requests.get(url, auth=get_confluence_auth(), params=params)
+        response = requests.get(url, auth=get_confluence_auth(user_credentials), params=params)
         
         if response.status_code != 200:
             print(f"Failed to fetch spaces: {response.status_code} - {response.text}")
@@ -55,19 +164,41 @@ def get_available_spaces():
         return []
 
 
-def extract_page_id_from_url(url):
-    """Extract page ID from Confluence URL"""
+def extract_space_key_from_url(url):
+    """Extract space key from Confluence URL"""
     if not url:
         return None
     
-    # Debug: Print URL to understand format
-    print(f"DEBUG: Extracting page ID from URL: {url}")
+    try:
+        # Modern Confluence URLs: https://domain.atlassian.net/wiki/spaces/SPACE_KEY/pages/...
+        if '/wiki/spaces/' in url:
+            parts = url.split('/wiki/spaces/')
+            if len(parts) > 1:
+                space_key = parts[1].split('/')[0]
+                logger.info(f"✅ Extracted space key from URL: {space_key}")
+                return space_key
+        
+        logger.warning(f"⚠️ Could not extract space key from URL: {url}")
+        return None
+        
+    except Exception as e:
+        logger.error(f"❌ Error extracting space key from URL: {e}")
+        return None
+
+
+def extract_page_id_from_url(url):
+    """Extract page ID from Confluence URL"""
+    if not url:
+        logger.warning("⚠️ No URL provided for page ID extraction")
+        return None
+    
+    logger.info(f"🔍 Extracting page ID from URL: {url}")
     
     try:
         # Method 1: Standard viewpage.action URL
         if 'pageId=' in url:
             page_id = url.split('pageId=')[1].split('&')[0]
-            print(f"DEBUG: Found pageId in URL: {page_id}")
+            logger.info(f"✅ Found pageId in URL: {page_id}")
             return page_id
         
         # Method 2: Modern Confluence URLs with /pages/
@@ -76,7 +207,9 @@ def extract_page_id_from_url(url):
             parts = url.split('/pages/')
             if len(parts) > 1:
                 page_id = parts[1].split('/')[0]
-                print(f"DEBUG: Found page ID in modern URL: {page_id}")
+                logger.info(f"✅ Extracted page ID from modern URL: {page_id}")
+                return page_id
+                logger.debug(f"✅ Found page ID in modern URL: {page_id}")
                 return page_id
         
         # Method 3: API content URL
@@ -85,41 +218,69 @@ def extract_page_id_from_url(url):
             parts = url.split('/rest/api/content/')
             if len(parts) > 1:
                 page_id = parts[1].split('?')[0].split('/')[0]
-                print(f"DEBUG: Found page ID in API URL: {page_id}")
+                logger.debug(f"✅ Found page ID in API URL: {page_id}")
                 return page_id
         
-        print(f"DEBUG: No page ID found in URL format")
+        logger.warning(f"⚠️ No page ID found in URL format: {url}")
         return None
         
     except Exception as e:
-        print(f"DEBUG: Error extracting page ID: {e}")
+        logger.error(f"❌ Error extracting page ID from {url}: {e}")
         return None
 
 
-def apply_merge_to_confluence(main_doc, similar_doc, merged_content, keep_main=True):
+def apply_merge_to_confluence(main_doc, similar_doc, merged_content, keep_main=True, user_credentials=None):
     """Apply the merge to Confluence: update one page, delete the other, and track the operation"""
     try:
+        logger.info(f"🔄 Starting Confluence merge operation (keep_main={keep_main})")
+        logger.info(f"🔍 User credentials provided: {bool(user_credentials)}")
+        if user_credentials:
+            logger.info(f"🔍 User credentials keys: {list(user_credentials.keys())}")
+            logger.info(f"🔍 Raw user_credentials: {user_credentials}")
+        else:
+            logger.warning("⚠️ No user credentials provided to apply_merge_to_confluence!")
+        
         # Extract page IDs from URLs (using the function defined in this same file)
+        logger.info(f"🔍 Main doc metadata: {main_doc.metadata}")
+        logger.info(f"🔍 Similar doc metadata: {similar_doc.metadata}")
+        
         main_page_id = extract_page_id_from_url(main_doc.metadata.get('source'))
         similar_page_id = extract_page_id_from_url(similar_doc.metadata.get('source'))
+        
+        # If 'source' is not available, try 'url' 
+        if not main_page_id and 'url' in main_doc.metadata:
+            main_page_id = extract_page_id_from_url(main_doc.metadata.get('url'))
+            
+        if not similar_page_id and 'url' in similar_doc.metadata:
+            similar_page_id = extract_page_id_from_url(similar_doc.metadata.get('url'))
+        
+        logger.info(f"📄 Extracted page IDs - Main: {main_page_id}, Similar: {similar_page_id}")
         
         # If URL extraction failed, try to get page ID by title
         if not main_page_id:
             main_title = main_doc.metadata.get('title')
-            main_space = main_doc.metadata.get('space_key', 'SD')
+            # Try to extract space from URL first, then fall back to metadata
+            main_url = main_doc.metadata.get('source') or main_doc.metadata.get('url')
+            main_space = extract_space_key_from_url(main_url) or main_doc.metadata.get('space_key') or main_doc.metadata.get('space', 'SD')
+            logger.warning(f"⚠️ Main page ID not found in URL, searching by title: '{main_title}' in space '{main_space}'")
             if main_title:
-                main_page_id = get_page_id_by_title(main_title, main_space)
+                main_page_id = get_page_id_by_title(main_title, main_space, user_credentials)
+                logger.info(f"📄 Found main page ID by title: {main_page_id}")
         
         if not similar_page_id:
             similar_title = similar_doc.metadata.get('title')
-            similar_space = similar_doc.metadata.get('space_key', 'SD')
+            # Try to extract space from URL first, then fall back to metadata
+            similar_url = similar_doc.metadata.get('source') or similar_doc.metadata.get('url')
+            similar_space = extract_space_key_from_url(similar_url) or similar_doc.metadata.get('space_key') or similar_doc.metadata.get('space', 'SD')
+            logger.warning(f"⚠️ Similar page ID not found in URL, searching by title: '{similar_title}' in space '{similar_space}'")
             if similar_title:
-                similar_page_id = get_page_id_by_title(similar_title, similar_space)
-        
-        print(f"DEBUG: Main page ID: {main_page_id}, Similar page ID: {similar_page_id}")
+                similar_page_id = get_page_id_by_title(similar_title, similar_space, user_credentials)
+                logger.info(f"📄 Found similar page ID by title: {similar_page_id}")
         
         if not main_page_id or not similar_page_id:
-            return False, f"Could not extract page IDs. Main: {main_page_id}, Similar: {similar_page_id}"
+            error_msg = f"Could not extract page IDs. Main: {main_page_id}, Similar: {similar_page_id}"
+            logger.error(f"❌ {error_msg}")
+            return False, error_msg
         
         # Determine which page to keep and which to delete
         if keep_main:
@@ -137,54 +298,73 @@ def apply_merge_to_confluence(main_doc, similar_doc, merged_content, keep_main=T
             keep_url = similar_doc.metadata.get('source', '')
             delete_url = main_doc.metadata.get('source', '')
         
+        logger.info(f"📝 Keep page: '{keep_title}' (ID: {keep_page_id})")
+        logger.info(f"🗑️ Delete page: '{delete_title}' (ID: {delete_page_id})")
+        
         # Store merge operation BEFORE making changes
         try:
             from models.database import store_merge_operation
+            logger.info("💾 Storing merge operation for tracking...")
             store_success, store_message = store_merge_operation(
                 keep_page_id, delete_page_id, merged_content, 
                 keep_title, delete_title, keep_url, delete_url
             )
             
             if not store_success:
-                print(f"WARNING: Could not store merge operation: {store_message}")
+                logger.warning(f"⚠️ Could not store merge operation: {store_message}")
                 # Continue anyway since tracking is not critical for the merge itself
         except ImportError:
-            print("WARNING: Could not import store_merge_operation - merge tracking unavailable")
+            logger.warning("⚠️ Could not import store_merge_operation - merge tracking unavailable")
             store_success = False
             store_message = "Merge tracking not available"
         
         # Convert content to Confluence storage format
+        logger.info("🔄 Converting merged content to Confluence storage format...")
         confluence_content = convert_markdown_to_confluence_storage(merged_content)
+        logger.debug(f"📝 Converted content length: {len(confluence_content)} characters")
         
         # Update the page we're keeping
+        logger.info(f"📝 Updating kept page '{keep_title}' (ID: {keep_page_id})...")
         update_success, update_message = update_confluence_page(
             keep_page_id, 
             confluence_content, 
-            keep_title
+            keep_title,
+            user_credentials
         )
         
         if not update_success:
-            return False, f"Failed to update page: {update_message}"
+            error_msg = f"Failed to update page: {update_message}"
+            logger.error(f"❌ {error_msg}")
+            return False, error_msg
+        
+        logger.info(f"✅ Successfully updated page '{keep_title}'")
         
         # Delete the other page
-        delete_success, delete_message = delete_confluence_page(delete_page_id)
+        logger.info(f"🗑️ Deleting duplicate page '{delete_title}' (ID: {delete_page_id})...")
+        delete_success, delete_message = delete_confluence_page(delete_page_id, user_credentials)
         
         if not delete_success:
-            return False, f"Updated page but failed to delete duplicate: {delete_message}"
+            error_msg = f"Updated page but failed to delete duplicate: {delete_message}"
+            logger.error(f"❌ {error_msg}")
+            return False, error_msg
+        
+        logger.info(f"✅ Successfully deleted duplicate page '{delete_title}'")
         
         # Update Chroma database to remove duplicate relationships
         try:
             from models.database import update_chroma_after_merge
+            logger.info("💾 Updating ChromaDB after merge...")
             chroma_success, chroma_message = update_chroma_after_merge(main_doc, similar_doc, keep_main)
             
             if not chroma_success:
                 # Log the error but don't fail the entire operation since Confluence was updated successfully
-                print(f"WARNING: Confluence merge succeeded but Chroma update failed: {chroma_message}")
+                logger.warning(f"⚠️ Confluence merge succeeded but ChromaDB update failed: {chroma_message}")
                 success_message = f"Successfully merged documents. Updated '{keep_title}' and deleted duplicate page."
                 if store_success:
                     success_message += " Merge operation tracked for undo capability."
                 else:
                     success_message += f" Warning: Merge tracking failed - {store_message}"
+                logger.info(f"✅ {success_message}")
                 return True, success_message
             
             success_message = f"Successfully merged documents. Updated '{keep_title}', deleted duplicate page, and updated database."
@@ -193,19 +373,27 @@ def apply_merge_to_confluence(main_doc, similar_doc, merged_content, keep_main=T
             else:
                 success_message += f" Warning: Merge tracking failed - {store_message}"
             
+            logger.info(f"✅ {success_message}")
             return True, success_message
             
         except ImportError:
-            print("WARNING: Could not import update_chroma_after_merge - database update unavailable")
+            logger.warning("⚠️ Could not import update_chroma_after_merge - database update unavailable")
             success_message = f"Successfully merged documents. Updated '{keep_title}' and deleted duplicate page."
+            logger.info(f"✅ {success_message}")
             return True, success_message
     
     except Exception as e:
-        return False, f"Error applying merge: {str(e)}"
+        error_msg = f"Error applying merge: {str(e)}"
+        logger.error(f"❌ {error_msg}", exc_info=True)
+        return False, error_msg
 
 
-def cleanup_orphaned_chroma_records():
-    """Remove ChromaDB records that reference deleted Confluence pages"""
+def cleanup_orphaned_chroma_records(user_credentials=None):
+    """Remove ChromaDB records that reference deleted Confluence pages
+    
+    Args:
+        user_credentials (dict): User's Confluence credentials
+    """
     try:
         from models.database import get_document_database
         import requests
@@ -214,20 +402,17 @@ def cleanup_orphaned_chroma_records():
         db = get_document_database()
         all_docs = db.get()
         
-        if not all_docs['documents']:
-            return True, "No documents in ChromaDB to check", 0
-        
-        print(f"DEBUG: Checking {len(all_docs['documents'])} ChromaDB records for orphaned entries...")
+        doc_ids = all_docs.get('ids', [])
+        metadatas = all_docs.get('metadatas', [])
         
         orphaned_ids = []
-        checked_count = 0
         
-        for i, metadata in enumerate(all_docs['metadatas']):
-            doc_id = all_docs['ids'][i]
-            title = metadata.get('title', 'Unknown')
+        for i, doc_id in enumerate(doc_ids):
+            metadata = metadatas[i] if i < len(metadatas) else {}
             source_url = metadata.get('source', '')
+            title = metadata.get('title', 'Unknown')
             
-            # Extract page ID from the source URL or doc_id
+            # Extract page ID from document ID or source URL
             page_id = None
             if source_url:
                 page_id = extract_page_id_from_url(source_url)
@@ -237,47 +422,38 @@ def cleanup_orphaned_chroma_records():
             if page_id:
                 # Check if the page still exists in Confluence
                 try:
-                    check_url = f"{get_confluence_base_url()}/rest/api/content/{page_id}"
-                    response = requests.get(check_url, auth=get_confluence_auth())
+                    check_url = f"{get_confluence_base_url(user_credentials)}/rest/api/content/{page_id}"
+                    response = requests.get(check_url, auth=get_confluence_auth(user_credentials))
                     
                     if response.status_code == 404:
-                        # Page no longer exists - mark for deletion
+                        # Page doesn't exist, mark for deletion
                         orphaned_ids.append(doc_id)
-                        print(f"DEBUG: Found orphaned record: '{title}' (page_id: {page_id})")
-                    elif response.status_code == 200:
-                        # Page exists - check if it's trashed
-                        page_data = response.json()
-                        if page_data.get('status') == 'trashed':
-                            orphaned_ids.append(doc_id)
-                            print(f"DEBUG: Found trashed page record: '{title}' (page_id: {page_id})")
-                    # For other status codes (403, 500, etc.), assume the page exists but we can't access it
-                    
-                    checked_count += 1
-                    
+                        logger.info(f"🗑️ Found orphaned record: {title} (ID: {doc_id})")
+                    elif response.status_code != 200:
+                        logger.warning(f"⚠️ Could not verify page {page_id}: HTTP {response.status_code}")
+                        
                 except Exception as e:
-                    print(f"DEBUG: Error checking page {page_id}: {e}")
-                    # On error, don't delete - assume page exists
-                    continue
-            else:
-                # No page ID found - this might be a seeded document with doc_ prefix
-                # These are usually fine to keep
-                continue
+                    logger.warning(f"⚠️ Error checking page {page_id}: {e}")
         
         # Remove orphaned records
         if orphaned_ids:
-            print(f"DEBUG: Removing {len(orphaned_ids)} orphaned records from ChromaDB...")
-            db.delete(orphaned_ids)
-            
-            return True, f"Successfully checked {checked_count} records and cleaned orphaned entries", len(orphaned_ids)
+            try:
+                db.delete(ids=orphaned_ids)
+                logger.info(f"✅ Cleaned up {len(orphaned_ids)} orphaned ChromaDB records")
+                return len(orphaned_ids)
+            except Exception as e:
+                logger.error(f"❌ Error deleting orphaned records: {e}")
+                return 0
         else:
-            return True, f"Checked {checked_count} records - no orphaned entries found", 0
+            logger.info("✅ No orphaned ChromaDB records found")
+            return 0
             
     except Exception as e:
-        print(f"DEBUG: Error during orphan cleanup: {e}")
-        return False, f"Error cleaning orphaned records: {str(e)}", 0
+        logger.error(f"❌ Error during orphaned records cleanup: {e}", exc_info=True)
+        return 0
 
 
-def load_documents_from_spaces(space_keys, limit_per_space=50):
+def load_documents_from_spaces(space_keys, limit_per_space=50, user_credentials=None):
     """Load documents from specified Confluence spaces into ChromaDB
     
     Args:
@@ -313,9 +489,9 @@ def load_documents_from_spaces(space_keys, limit_per_space=50):
                 
                 # Use ConfluenceLoader to get documents from this space
                 loader = ConfluenceLoader(
-                    url=get_confluence_base_url(),
-                    username=get_confluence_auth()[0],
-                    api_key=get_confluence_auth()[1],
+                    url=get_confluence_base_url(user_credentials),
+                    username=get_confluence_auth(user_credentials)[0],
+                    api_key=get_confluence_auth(user_credentials)[1],
                     space_key=space_key,
                     include_attachments=False,
                     limit=limit_per_space
@@ -381,8 +557,13 @@ def load_documents_from_spaces(space_keys, limit_per_space=50):
         }
 
 
-def undo_merge_operation(merge_id):
-    """Undo a merge operation using Confluence native restore capabilities"""
+def undo_merge_operation(merge_id, user_credentials=None):
+    """Undo a merge operation using Confluence native restore capabilities
+    
+    Args:
+        merge_id (str): The ID of the merge operation to undo
+        user_credentials (dict): User's Confluence credentials
+    """
     try:
         import json
         import os
@@ -416,7 +597,7 @@ def undo_merge_operation(merge_id):
         
         # Step 1: Get the current version of the kept page and revert to previous version
         print(f"DEBUG: Attempting to revert page {kept_page_id} to previous version")
-        current_version = get_page_version(kept_page_id)
+        current_version = get_page_version(kept_page_id, user_credentials)
         if current_version is None:
             return False, "Could not get current page version"
         
@@ -426,7 +607,7 @@ def undo_merge_operation(merge_id):
             return False, "Cannot revert - page is already at version 1"
         
         revert_success, revert_message = restore_confluence_page_version(
-            kept_page_id, previous_version
+            kept_page_id, previous_version, user_credentials
         )
         if not revert_success:
             return False, f"Failed to revert kept page to version {previous_version}: {revert_message}"
@@ -459,9 +640,9 @@ def undo_merge_operation(merge_id):
             
             # Re-load both pages from Confluence and add them back to ChromaDB
             loader = ConfluenceLoader(
-                url=get_confluence_base_url(),
-                username=get_confluence_auth()[0],
-                api_key=get_confluence_auth()[1],
+                url=get_confluence_base_url(user_credentials),
+                username=get_confluence_auth(user_credentials)[0],
+                api_key=get_confluence_auth(user_credentials)[1],
                 page_ids=[kept_page_id, deleted_page_id],
                 include_attachments=False,
                 limit=None
@@ -520,15 +701,21 @@ def undo_merge_operation(merge_id):
         return False, f"Error undoing merge operation: {str(e)}"
 
 
-def restore_confluence_page_version(page_id, version_number):
-    """Restore a Confluence page to a specific version"""
+def restore_confluence_page_version(page_id, version_number, user_credentials=None):
+    """Restore a Confluence page to a specific version
+    
+    Args:
+        page_id (str): Confluence page ID
+        version_number (int): Version number to restore to
+        user_credentials (dict): User's Confluence credentials
+    """
     try:
         print(f"DEBUG: Starting restore of page {page_id} to version {version_number}")
         
         # Get the specific version content
-        url = f"{get_confluence_base_url()}/rest/api/content/{page_id}"
+        url = f"{get_confluence_base_url(user_credentials)}/rest/api/content/{page_id}"
         params = {"expand": "body.storage,version", "version": version_number}
-        response = requests.get(url, auth=get_confluence_auth(), params=params)
+        response = requests.get(url, auth=get_confluence_auth(user_credentials), params=params)
         
         if response.status_code != 200:
             return False, f"Could not get version {version_number}: {response.status_code} - {response.text}"
@@ -542,7 +729,7 @@ def restore_confluence_page_version(page_id, version_number):
             return False, f"Retrieved version {retrieved_version} instead of {version_number}"
         
         # Get current version
-        current_version = get_page_version(page_id)
+        current_version = get_page_version(page_id, user_credentials)
         if current_version is None:
             return False, "Could not get current page version"
         
@@ -565,7 +752,7 @@ def restore_confluence_page_version(page_id, version_number):
         }
         
         # Update the page with proper headers
-        update_url = f"{get_confluence_base_url()}/rest/api/content/{page_id}"
+        update_url = f"{get_confluence_base_url(user_credentials)}/rest/api/content/{page_id}"
         headers = {
             "Content-Type": "application/json",
             "Accept": "application/json"
@@ -574,7 +761,7 @@ def restore_confluence_page_version(page_id, version_number):
         print(f"DEBUG: Updating page {page_id} to new version {current_version + 1} with content from version {version_number}")
         response = requests.put(
             update_url, 
-            auth=get_confluence_auth(),
+            auth=get_confluence_auth(user_credentials),
             headers=headers,
             json=update_data
         )
@@ -592,12 +779,17 @@ def restore_confluence_page_version(page_id, version_number):
         return False, f"Error restoring page version: {str(e)}"
 
 
-def restore_deleted_confluence_page_from_trash(page_id):
-    """Restore a deleted Confluence page from trash without checking for duplicates"""
+def restore_deleted_confluence_page_from_trash(page_id, user_credentials=None):
+    """Restore a deleted Confluence page from trash without checking for duplicates
+    
+    Args:
+        page_id (str): Confluence page ID
+        user_credentials (dict): User's Confluence credentials
+    """
     try:
         # First, check if the page exists in trash
-        check_url = f"{get_confluence_base_url()}/rest/api/content/{page_id}?status=trashed&expand=body.storage"
-        check_response = requests.get(check_url, auth=get_confluence_auth())
+        check_url = f"{get_confluence_base_url(user_credentials)}/rest/api/content/{page_id}?status=trashed&expand=body.storage"
+        check_response = requests.get(check_url, auth=get_confluence_auth(user_credentials))
         
         if check_response.status_code != 200:
             return False, f"Page {page_id} not found in trash: {check_response.status_code} - {check_response.text}"
@@ -608,7 +800,7 @@ def restore_deleted_confluence_page_from_trash(page_id):
         page_content = page_data.get('body', {}).get('storage', {}).get('value', '')
         
         # Method 1: Try the standard restore endpoint with confirmation
-        restore_url = f"{get_confluence_base_url()}/rest/api/content/{page_id}/restore"
+        restore_url = f"{get_confluence_base_url(user_credentials)}/rest/api/content/{page_id}/restore"
         
         # Add headers to indicate we're programmatically confirming the restore
         headers = {
@@ -624,7 +816,7 @@ def restore_deleted_confluence_page_from_trash(page_id):
         
         response = requests.post(
             restore_url, 
-            auth=get_confluence_auth(),
+            auth=get_confluence_auth(user_credentials),
             headers=headers,
             json=restore_data
         )
@@ -634,13 +826,13 @@ def restore_deleted_confluence_page_from_trash(page_id):
             restore_success = True
         else:
             # Method 2: If that fails, try without the body (some versions don't need it)
-            response = requests.post(restore_url, auth=get_confluence_auth(), headers=headers)
+            response = requests.post(restore_url, auth=get_confluence_auth(user_credentials), headers=headers)
             
             if response.status_code == 200:
                 restore_success = True
             else:
                 # Method 3: Try using PUT to change the status from trashed to current
-                update_url = f"{get_confluence_base_url()}/rest/api/content/{page_id}"
+                update_url = f"{get_confluence_base_url(user_credentials)}/rest/api/content/{page_id}"
                 current_version = page_data.get('version', {}).get('number', 1)
                 
                 # Update the page status
@@ -661,7 +853,7 @@ def restore_deleted_confluence_page_from_trash(page_id):
                 
                 response = requests.put(
                     update_url,
-                    auth=get_confluence_auth(),
+                    auth=get_confluence_auth(user_credentials),
                     headers=headers,
                     json=update_data
                 )
@@ -679,64 +871,69 @@ def restore_deleted_confluence_page_from_trash(page_id):
         return False, f"Error restoring page from trash: {str(e)}"
 
 
-def get_page_id_by_title(title, space_key="SD"):
+def get_page_id_by_title(title, space_key="SD", user_credentials=None):
     """
     Get page ID by searching for page title in the space
     
     Args:
         title (str): Page title to search for
         space_key (str): Space key to search in
+        user_credentials (dict): User's Confluence credentials
         
     Returns:
         str: Page ID if found, None otherwise
     """
     try:
+        logger.info(f"🔍 Searching for page '{title}' in space '{space_key}'")
+        
         # Search for page by title
-        url = f"{get_confluence_base_url()}/rest/api/content"
+        url = f"{get_confluence_base_url(user_credentials)}/rest/api/content"
         params = {
             "title": title,
             "spaceKey": space_key,
             "expand": "version"
         }
         
-        response = requests.get(url, auth=get_confluence_auth(), params=params)
+        response = requests.get(url, auth=get_confluence_auth(user_credentials), params=params)
         if response.status_code == 200:
             data = response.json()
             if data.get('results'):
                 page_id = data['results'][0]['id']
+                logger.info(f"✅ Found page '{title}' with ID: {page_id}")
                 return page_id
         
-        print(f"Could not find page by title: {title}")
+        logger.warning(f"⚠️ Could not find page by title: '{title}' in space '{space_key}'")
         return None
         
     except Exception as e:
-        print(f"Error searching for page by title: {e}")
+        logger.error(f"❌ Error searching for page by title '{title}': {e}", exc_info=True)
         return None
 
 
-def get_page_version(page_id):
+def get_page_version(page_id, user_credentials=None):
     """
     Get current version of a Confluence page
     
     Args:
         page_id (str): Confluence page ID
+        user_credentials (dict): User's Confluence credentials
         
     Returns:
         int: Current page version number
     """
     try:
-        url = f"{get_confluence_base_url()}/rest/api/content/{page_id}"
-        response = requests.get(url, auth=get_confluence_auth())
+        url = f"{get_confluence_base_url(user_credentials)}/rest/api/content/{page_id}"
+        response = requests.get(url, auth=get_confluence_auth(user_credentials))
         if response.status_code == 200:
             data = response.json()
             return data.get('version', {}).get('number', 1)
         return None
     except Exception as e:
-        print(f"Error getting page version: {str(e)}")
+        logger.error(f"❌ Error getting page version: {str(e)}", exc_info=True)
         return None
 
 
-def update_confluence_page(page_id, new_content, new_title):
+def update_confluence_page(page_id, new_content, new_title, user_credentials=None):
     """
     Update a Confluence page with new content
     
@@ -744,15 +941,21 @@ def update_confluence_page(page_id, new_content, new_title):
         page_id (str): Confluence page ID
         new_content (str): New content for the page
         new_title (str): New title for the page
+        user_credentials (dict): User's Confluence credentials
         
     Returns:
         tuple: (success, message)
     """
     try:
+        logger.info(f"📝 Updating Confluence page '{new_title}' (ID: {page_id})")
+        
         # Get current version
-        current_version = get_page_version(page_id)
+        current_version = get_page_version(page_id, user_credentials)
         if current_version is None:
+            logger.error(f"❌ Could not get current version for page {page_id}")
             return False, "Could not get current page version"
+        
+        logger.debug(f"📄 Current page version: {current_version}")
         
         # Prepare update payload
         update_data = {
@@ -769,45 +972,60 @@ def update_confluence_page(page_id, new_content, new_title):
             }
         }
         
+        logger.debug(f"📦 Update payload prepared for version {current_version + 1}")
+        
         # Update the page
-        url = f"{get_confluence_base_url()}/rest/api/content/{page_id}"
+        url = f"{get_confluence_base_url(user_credentials)}/rest/api/content/{page_id}"
         response = requests.put(
             url, 
-            auth=get_confluence_auth(),
+            auth=get_confluence_auth(user_credentials),
             headers={"Content-Type": "application/json"},
             data=json.dumps(update_data)
         )
         
         if response.status_code == 200:
+            logger.info(f"✅ Successfully updated page '{new_title}' (ID: {page_id})")
             return True, "Page updated successfully"
         else:
-            return False, f"Failed to update page: {response.status_code} - {response.text}"
+            error_msg = f"Failed to update page: {response.status_code} - {response.text}"
+            logger.error(f"❌ {error_msg}")
+            return False, error_msg
     
     except Exception as e:
-        return False, f"Error updating page: {str(e)}"
+        error_msg = f"Error updating page: {str(e)}"
+        logger.error(f"❌ {error_msg}", exc_info=True)
+        return False, error_msg
 
 
-def delete_confluence_page(page_id):
+def delete_confluence_page(page_id, user_credentials=None):
     """
     Delete a Confluence page
     
     Args:
         page_id (str): Confluence page ID
+        user_credentials (dict): User's Confluence credentials
         
     Returns:
         tuple: (success, message)
     """
     try:
-        url = f"{get_confluence_base_url()}/rest/api/content/{page_id}"
-        response = requests.delete(url, auth=get_confluence_auth())
+        logger.info(f"🗑️ Deleting Confluence page (ID: {page_id})")
+        
+        url = f"{get_confluence_base_url(user_credentials)}/rest/api/content/{page_id}"
+        response = requests.delete(url, auth=get_confluence_auth(user_credentials))
         
         if response.status_code == 204:
+            logger.info(f"✅ Successfully deleted page (ID: {page_id})")
             return True, "Page deleted successfully"
         else:
-            return False, f"Failed to delete page: {response.status_code} - {response.text}"
+            error_msg = f"Failed to delete page: {response.status_code} - {response.text}"
+            logger.error(f"❌ {error_msg}")
+            return False, error_msg
     
     except Exception as e:
-        return False, f"Error deleting page: {str(e)}"
+        error_msg = f"Error deleting page: {str(e)}"
+        logger.error(f"❌ {error_msg}", exc_info=True)
+        return False, error_msg
 
 
 def convert_markdown_to_confluence_storage(content):
@@ -838,19 +1056,20 @@ def convert_markdown_to_confluence_storage(content):
     return storage_content
 
 
-def get_space_name_from_key(space_key):
+def get_space_name_from_key(space_key, user_credentials=None):
     """
     Get space name from space key
     
     Args:
         space_key (str): Confluence space key
+        user_credentials (dict): User's Confluence credentials
         
     Returns:
         str: Space name if found, the space key otherwise
     """
     try:
-        url = f"{get_confluence_base_url()}/rest/api/space/{space_key}"
-        response = requests.get(url, auth=get_confluence_auth())
+        url = f"{get_confluence_base_url(user_credentials)}/rest/api/space/{space_key}"
+        response = requests.get(url, auth=get_confluence_auth(user_credentials))
         
         if response.status_code == 200:
             data = response.json()

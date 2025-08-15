@@ -11,6 +11,7 @@ import SpacesPage from '../components/spaces-page';
 import MergeHistoryPage from '../components/merge-history-page';
 import SettingsPage from '../components/settings-page';
 import { ThemeToggle } from '../components/theme-toggle';
+import { Header } from '../components/header';
 
 export default function Home() {
   const { isSignedIn, isLoaded: authLoaded } = useAuth();
@@ -93,26 +94,7 @@ export default function Home() {
       {/* Main Content */}
       <div className="flex-1 flex flex-col">
         {/* Header */}
-        <header className="bg-card border-b border-border px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-foreground">Concatly</h1>
-              <p className="text-sm text-muted-foreground">
-                Organization: {organization.name}
-              </p>
-            </div>
-            
-            <div className="flex items-center gap-4">
-              <ThemeToggle />
-              <button
-                onClick={handleSignOut}
-                className="bg-destructive text-destructive-foreground px-4 py-2 rounded-lg hover:bg-destructive/90 transition-colors"
-              >
-                Sign Out
-              </button>
-            </div>
-          </div>
-        </header>
+        <Header />
 
         {/* Page Content */}
         <main className="flex-1 overflow-y-auto">

@@ -1,6 +1,22 @@
 """
 FastAPI Application for Confluence Document Processing Service.
-Clean, containerized backend for connecting to Confluence, processing documents, and managing vector embeddings.
+Clean, containerized backend for connecting to Confluence, processing documents,
+and genera    try:
+        logger.info("� Environment check - OpenAI API Key: ✅ Set" if os.getenv('OPENAI_API_KEY') else "🔑 Environment check - OpenAI API Key: ❌ Missing")
+        
+        # Get actual configuration values that will be used
+        from services.vector_store_service import VectorStoreConfig
+        chroma_persist_dir, _ = VectorStoreConfig.from_environment()
+        logger.info(f"💾 ChromaDB path (configured): {chroma_persist_dir}")
+        logger.info(f"📂 Current working directory: {os.getcwd()}")
+        
+        # Show absolute path for clarity
+        from pathlib import Path
+        abs_chroma_path = Path(chroma_persist_dir).resolve()
+        logger.info(f"💾 ChromaDB path (absolute): {abs_chroma_path}")
+        logger.info(f"📁 ChromaDB exists: {'✅' if abs_chroma_path.exists() else '❌'}")
+        
+        logger.info("🗄️ Initializing vector store service from environment...")mbeddings.
 """
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,6 +24,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 import os
 import asyncio
+import time
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 
@@ -17,6 +34,14 @@ load_dotenv()
 # Import our service modules
 from confluence_service import ConfluenceService, ConfluenceConfig
 from vector_store_service import VectorStoreService, VectorStoreConfig
+
+# Import logging
+import sys
+sys.path.append('..')
+from utils.logging_config import get_logger, log_startup, log_shutdown, log_api_request, log_api_response, log_error_with_context
+
+# Initialize logger
+logger = get_logger("main")
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -124,84 +149,98 @@ class DuplicatePair(BaseModel):
     status: str
 
 
+class MergeRequest(BaseModel):
+    """Request to merge two documents."""
+    pair_id: int = Field(..., description="ID of the duplicate pair to merge")
+    organization_id: Optional[str] = Field(None, description="Organization ID for data isolation")
+
+
+class ApplyMergeRequest(BaseModel):
+    """Request to apply a merge to Confluence."""
+    pair_id: int = Field(..., description="ID of the duplicate pair")
+    organization_id: Optional[str] = Field(None, description="Organization ID for data isolation")
+    merged_content: str = Field(..., description="The merged content to apply")
+    keep_main: bool = Field(..., description="Whether to keep the main document's title/page")
+    user_credentials: Optional[dict] = Field(None, description="User's Confluence credentials")
+
+
 # Startup event
 @app.on_event("startup")
 async def startup_event():
     """Initialize services on startup."""
     global vector_store_service
     
-    print("🚀 [STARTUP] Application starting up...")
-    print(f"🚀 [STARTUP] Environment check - OpenAI API Key: {'✅ Set' if os.getenv('OPENAI_API_KEY') else '❌ Missing'}")
-    print(f"🚀 [STARTUP] Environment check - ChromaDB persist dir: {os.getenv('CHROMA_PERSIST_DIRECTORY', './chroma_store')}")
-    print(f"🚀 [STARTUP] Current working directory: {os.getcwd()}")
+    # Log startup
+    log_startup("main")
     
     try:
-        print("🗄️ [STARTUP] Initializing vector store service from environment...")
+        logger.info("� Environment check - OpenAI API Key: ✅ Set" if os.getenv('OPENAI_API_KEY') else "🔑 Environment check - OpenAI API Key: ❌ Missing")
+        logger.info(f"�️ Environment check - ChromaDB persist dir: {os.getenv('CHROMA_PERSIST_DIRECTORY', './chroma_store')}")
+        logger.info(f"� Current working directory: {os.getcwd()}")
+        
+        logger.info("🗄️ Initializing vector store service from environment...")
         # Initialize vector store service from environment
         vector_store_service = VectorStoreConfig.create_service_from_env()
-        print("✅ [STARTUP] Vector store service initialized successfully")
+        logger.info("✅ Vector store service initialized successfully")
         
         # Test the vector store
         try:
-            print("🧪 [STARTUP] Testing vector store connection...")
+            logger.info("🧪 Testing vector store connection...")
             vs_success, vs_message = vector_store_service.test_connection()
             if vs_success:
-                print(f"✅ [STARTUP] Vector store test successful: {vs_message}")
+                logger.info(f"✅ Vector store test successful: {vs_message}")
                 doc_count = vector_store_service.get_document_count()
-                print(f"📊 [STARTUP] Vector store contains {doc_count} documents")
+                logger.info(f"📊 Vector store contains {doc_count} documents")
             else:
-                print(f"❌ [STARTUP] Vector store test failed: {vs_message}")
+                logger.error(f"❌ Vector store test failed: {vs_message}")
         except Exception as vs_test_error:
-            print(f"💥 [STARTUP] Vector store test error: {vs_test_error}")
-            print(f"💥 [STARTUP] Error type: {type(vs_test_error).__name__}")
-            import traceback
-            print(f"💥 [STARTUP] Traceback: {traceback.format_exc()}")
+            log_error_with_context(logger, vs_test_error, "vector store test")
             
     except Exception as e:
-        print(f"❌ [STARTUP] Vector store service initialization failed: {e}")
-        print(f"❌ [STARTUP] Error type: {type(e).__name__}")
-        import traceback
-        print(f"❌ [STARTUP] Traceback: {traceback.format_exc()}")
-        print(f"❌ [STARTUP] Will try to initialize on first request")
-        # Continue without vector store - will be initialized on first request
+        log_error_with_context(logger, e, "vector store service initialization")
+        logger.warning("Will try to initialize on first request")
 
 
 # Health check endpoint
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
-    health_info = {
-        "status": "healthy",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "services": {
-            "vector_store": vector_store_service is not None,
-            "confluence": confluence_service is not None
-        },
-        "environment": {
-            "openai_api_key_set": bool(os.getenv('OPENAI_API_KEY')),
-            "chroma_persist_dir": os.getenv('CHROMA_PERSIST_DIRECTORY', './chroma_store'),
-            "working_directory": os.getcwd()
+    start_time = time.time()
+    
+    try:
+        # Get vector store status
+        vs_service = get_vector_store_for_organization()
+        vs_connected, vs_message = vs_service.test_connection()
+        
+        doc_count = vs_service.get_document_count() if vs_connected else 0
+        
+        status = {
+            "status": "healthy" if vs_connected else "degraded",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "services": {
+                "vector_store": {
+                    "connected": vs_connected,
+                    "message": vs_message,
+                    "document_count": doc_count
+                }
+            }
         }
-    }
-    
-    # Test vector store if available
-    if vector_store_service:
-        try:
-            vs_success, vs_message = vector_store_service.test_connection()
-            doc_count = vector_store_service.get_document_count()
-            health_info["vector_store_details"] = {
-                "connected": vs_success,
-                "message": vs_message,
-                "document_count": doc_count
-            }
-        except Exception as e:
-            health_info["vector_store_details"] = {
-                "connected": False,
-                "error": str(e)
-            }
-    
-    print(f"🩺 [HEALTH] Health check result: {health_info}")
-    return health_info
+        
+        duration_ms = (time.time() - start_time) * 1000
+        log_api_response(logger, "/health", 200, duration_ms, doc_count=doc_count)
+        
+        return status
+        
+    except Exception as e:
+        duration_ms = (time.time() - start_time) * 1000
+        log_error_with_context(logger, e, "/health endpoint")
+        log_api_response(logger, "/health", 500, duration_ms)
+        
+        return {
+            "status": "unhealthy",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "error": str(e)
+        }
 
 
 @app.get("/ping")
@@ -457,15 +496,13 @@ async def get_duplicate_summary(organization_id: Optional[str] = None):
 
 # Clear all data
 @app.delete("/clear")
-async def clear_all_data():
+async def clear_all_data(organization_id: Optional[str] = None):
     """Clear all documents from the vector store."""
     try:
-        global vector_store_service
+        # Get the organization-specific vector store
+        vs_service = get_vector_store_for_organization(organization_id)
         
-        if not vector_store_service:
-            raise HTTPException(status_code=400, detail="Vector store not initialized")
-        
-        success, message = vector_store_service.clear_all_documents()
+        success, message = vs_service.clear_all_documents()
         
         if not success:
             raise HTTPException(status_code=500, detail=message)
@@ -476,6 +513,222 @@ async def clear_all_data():
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to clear data: {str(e)}")
+
+
+# Merge endpoints
+@app.get("/merge/documents/{pair_id}")
+async def get_merge_documents(pair_id: int, organization_id: Optional[str] = None):
+    """Get full document content for a duplicate pair to enable merging."""
+    start_time = time.time()
+    log_api_request(logger, "GET", f"/merge/documents/{pair_id}", organization_id)
+    
+    try:
+        # Get the organization-specific vector store
+        vs_service = get_vector_store_for_organization(organization_id)
+        
+        # Get the duplicate pair data
+        duplicate_pairs = vs_service.get_duplicate_pairs()
+        logger.debug(f"Found {len(duplicate_pairs)} duplicate pairs")
+        
+        # Find the specific pair
+        target_pair = None
+        for pair in duplicate_pairs:
+            if pair['id'] == pair_id:
+                target_pair = pair
+                break
+        
+        if not target_pair:
+            duration_ms = (time.time() - start_time) * 1000
+            log_api_response(logger, f"/merge/documents/{pair_id}", 404, duration_ms)
+            raise HTTPException(status_code=404, detail=f"Duplicate pair {pair_id} not found")
+        
+        logger.info(f"Found target pair: {target_pair['page1']['title']} <-> {target_pair['page2']['title']}")
+        
+        # Get full document content from vector store
+        main_doc_data = vs_service.get_document_by_metadata(target_pair['page1'])
+        similar_doc_data = vs_service.get_document_by_metadata(target_pair['page2'])
+        
+        if not main_doc_data or not similar_doc_data:
+            duration_ms = (time.time() - start_time) * 1000
+            log_api_response(logger, f"/merge/documents/{pair_id}", 404, duration_ms)
+            raise HTTPException(status_code=404, detail="Could not retrieve full document content")
+        
+        result = {
+            "main_doc": {
+                "title": target_pair['page1']['title'],
+                "url": target_pair['page1']['url'],
+                "space": target_pair['page1'].get('space', ''),
+                "content": main_doc_data['content'],
+                "metadata": main_doc_data['metadata']
+            },
+            "similar_doc": {
+                "title": target_pair['page2']['title'],
+                "url": target_pair['page2']['url'],
+                "space": target_pair['page2'].get('space', ''),
+                "content": similar_doc_data['content'],
+                "metadata": similar_doc_data['metadata']
+            },
+            "similarity": target_pair['similarity']
+        }
+        
+        duration_ms = (time.time() - start_time) * 1000
+        log_api_response(logger, f"/merge/documents/{pair_id}", 200, duration_ms, 
+                        similarity=target_pair['similarity'])
+        
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        duration_ms = (time.time() - start_time) * 1000
+        log_error_with_context(logger, e, f"get_merge_documents pair_id={pair_id}")
+        log_api_response(logger, f"/merge/documents/{pair_id}", 500, duration_ms)
+        raise HTTPException(status_code=500, detail=f"Failed to get merge documents: {str(e)}")
+
+
+@app.post("/merge/perform")
+async def perform_merge(request: MergeRequest):
+    """Perform AI-powered merge of two documents."""
+    try:
+        # Get the organization-specific vector store
+        vs_service = get_vector_store_for_organization(request.organization_id)
+        
+        # Get the duplicate pair data
+        duplicate_pairs = vs_service.get_duplicate_pairs()
+        
+        # Find the specific pair
+        target_pair = None
+        for pair in duplicate_pairs:
+            if pair['id'] == request.pair_id:
+                target_pair = pair
+                break
+        
+        if not target_pair:
+            raise HTTPException(status_code=404, detail=f"Duplicate pair {request.pair_id} not found")
+        
+        # Get full document content
+        main_doc_data = vs_service.get_document_by_metadata(target_pair['page1'])
+        similar_doc_data = vs_service.get_document_by_metadata(target_pair['page2'])
+        
+        if not main_doc_data or not similar_doc_data:
+            raise HTTPException(status_code=404, detail="Could not retrieve full document content")
+        
+        # Create document objects for the AI merge function
+        from ai.merging import merge_documents_with_ai
+        
+        # Create mock document objects that match the expected structure
+        class MockDocument:
+            def __init__(self, content, metadata):
+                self.page_content = content
+                self.metadata = metadata
+        
+        main_doc = MockDocument(main_doc_data['content'], target_pair['page1'])
+        similar_doc = MockDocument(similar_doc_data['content'], target_pair['page2'])
+        
+        # Perform the AI merge
+        merged_content = merge_documents_with_ai(main_doc, similar_doc)
+        
+        return {"merged_content": merged_content}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to perform merge: {str(e)}")
+
+
+@app.post("/merge/apply")
+async def apply_merge(request: ApplyMergeRequest):
+    """Apply the merged content to Confluence."""
+    try:
+        print(f"🔍 [APPLY_MERGE] Received request with user_credentials: {bool(request.user_credentials)}")
+        if request.user_credentials:
+            print(f"🔍 [APPLY_MERGE] User credentials keys: {list(request.user_credentials.keys())}")
+            print(f"🔍 [APPLY_MERGE] Raw user credentials: {request.user_credentials}")
+        else:
+            print("⚠️ [APPLY_MERGE] No user credentials received in request!")
+        
+        print(f"🔍 [APPLY_MERGE] Getting vector store for org: {request.organization_id}")
+        # Get the organization-specific vector store
+        vs_service = get_vector_store_for_organization(request.organization_id)
+        
+        print(f"🔍 [APPLY_MERGE] Getting duplicate pairs...")
+        # Get the duplicate pair data
+        duplicate_pairs = vs_service.get_duplicate_pairs()
+        
+        print(f"🔍 [APPLY_MERGE] Found {len(duplicate_pairs)} duplicate pairs, looking for pair_id: {request.pair_id}")
+        # Find the specific pair
+        target_pair = None
+        for pair in duplicate_pairs:
+            if pair['id'] == request.pair_id:
+                target_pair = pair
+                break
+        
+        if not target_pair:
+            print(f"❌ [APPLY_MERGE] Target pair {request.pair_id} not found!")
+            raise HTTPException(status_code=404, detail=f"Duplicate pair {request.pair_id} not found")
+        
+        print(f"✅ [APPLY_MERGE] Found target pair: {target_pair}")
+        
+        print(f"🔍 [APPLY_MERGE] Getting document data...")
+        # Get full document content to create proper document objects
+        main_doc_data = vs_service.get_document_by_metadata(target_pair['page1'])
+        similar_doc_data = vs_service.get_document_by_metadata(target_pair['page2'])
+        
+        if not main_doc_data or not similar_doc_data:
+            print(f"❌ [APPLY_MERGE] Could not retrieve document data!")
+            raise HTTPException(status_code=404, detail="Could not retrieve full document content")
+        
+        print(f"✅ [APPLY_MERGE] Retrieved document data successfully")
+        
+        # Create document objects for the Confluence API
+        print(f"🔍 [APPLY_MERGE] Importing Confluence API...")
+        from confluence.api import apply_merge_to_confluence
+        
+        print(f"🔍 [APPLY_MERGE] Creating document objects...")
+        class MockDocument:
+            def __init__(self, content, metadata):
+                self.page_content = content
+                self.metadata = metadata
+        
+        main_doc = MockDocument(main_doc_data['content'], target_pair['page1'])
+        similar_doc = MockDocument(similar_doc_data['content'], target_pair['page2'])
+        
+        print(f"🔍 [APPLY_MERGE] Calling apply_merge_to_confluence with user_credentials...")
+        # Apply the merge to Confluence
+        success, message = apply_merge_to_confluence(
+            main_doc, 
+            similar_doc, 
+            request.merged_content, 
+            keep_main=request.keep_main,
+            user_credentials=request.user_credentials
+        )
+        
+        print(f"🔍 [APPLY_MERGE] apply_merge_to_confluence returned: success={success}, message={message}")
+        
+        if not success:
+            print(f"❌ [APPLY_MERGE] Merge failed: {message}")
+            raise HTTPException(status_code=500, detail=message)
+        
+        # Mark the duplicate pair as resolved in the vector store
+        print(f"🔍 [APPLY_MERGE] Marking duplicate pair {request.pair_id} as resolved...")
+        try:
+            vs_service.mark_pair_as_resolved(request.pair_id)
+            print(f"✅ [APPLY_MERGE] Successfully marked pair {request.pair_id} as resolved")
+        except Exception as e:
+            print(f"⚠️ [APPLY_MERGE] Failed to mark pair as resolved: {e}")
+            # Don't fail the entire operation since the merge was successful
+        
+        print(f"✅ [APPLY_MERGE] Merge completed successfully!")
+        return {"success": True, "message": message}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"💥 [APPLY_MERGE] Unexpected error: {e}")
+        print(f"💥 [APPLY_MERGE] Error type: {type(e).__name__}")
+        import traceback
+        print(f"💥 [APPLY_MERGE] Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Failed to apply merge: {str(e)}")
 
 
 # Background processing function

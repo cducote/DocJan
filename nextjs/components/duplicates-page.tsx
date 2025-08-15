@@ -5,6 +5,7 @@ import Sidebar from '@/components/sidebar';
 import { useOrganization } from '@clerk/nextjs';
 import { FileText, ExternalLink, AlertTriangle, CheckCircle } from 'lucide-react';
 import { api } from '../lib/api';
+import { useRouter } from 'next/navigation';
 
 interface ContentReportPageProps {
   platform: 'confluence' | 'sharepoint';
@@ -35,6 +36,7 @@ interface DuplicatesData {
 
 export default function ContentReportPage({ platform }: ContentReportPageProps) {
   const { organization } = useOrganization();
+  const router = useRouter();
   const [duplicatesData, setDuplicatesData] = useState<DuplicatesData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -76,16 +78,18 @@ export default function ContentReportPage({ platform }: ContentReportPageProps) 
     }
   };
 
-  const getReadableSpaceName = (spaceKey: string): string => {
-    // Convert space IDs to more readable names
-    if (spaceKey === 'SD') return 'Software Development';
-    if (spaceKey.startsWith('~')) return 'Personal Space';
-    return spaceKey; // Return as-is if it's already readable
+  const getReadableSpaceName = (spaceName: string): string => {
+    // Since we now store the actual space name from Confluence, just return it as-is
+    if (!spaceName || spaceName === 'Unknown') {
+      return 'Unknown Space';
+    }
+    
+    return spaceName;
   };
 
   const handleMerge = (pairId: number) => {
-    // TODO: Implement merge logic
-    console.log('Merge documents for pair:', pairId);
+    // Navigate to merge page with the pair ID
+    router.push(`/merge?pairId=${pairId}`);
   };
 
   if (loading) {
@@ -183,7 +187,7 @@ export default function ContentReportPage({ platform }: ContentReportPageProps) 
                       {pair.page1.space && (
                         <div className="text-sm text-muted-foreground mb-3 flex items-center">
                           <span className="bg-muted px-2 py-1 rounded text-xs">
-                            Space: {pair.page1.space}
+                            Space: {getReadableSpaceName(pair.page1.space)}
                           </span>
                         </div>
                       )}
@@ -211,7 +215,7 @@ export default function ContentReportPage({ platform }: ContentReportPageProps) 
                       {pair.page2.space && (
                         <div className="text-sm text-muted-foreground mb-3 flex items-center">
                           <span className="bg-muted px-2 py-1 rounded text-xs">
-                            Space: {pair.page2.space}
+                            Space: {getReadableSpaceName(pair.page2.space)}
                           </span>
                         </div>
                       )}
