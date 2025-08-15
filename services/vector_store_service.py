@@ -13,18 +13,27 @@ class VectorStoreService:
     """
     Core vector store operations service.
     Handles embedding generation, ChromaDB storage, and duplicate detection.
+    Supports organization-based data isolation through collections.
     """
     
-    def __init__(self, chroma_persist_dir: str = "./chroma_store", openai_api_key: Optional[str] = None):
+    def __init__(self, chroma_persist_dir: str = "./chroma_store", openai_api_key: Optional[str] = None, organization_id: Optional[str] = None):
         """
         Initialize vector store service.
         
         Args:
             chroma_persist_dir: Directory for ChromaDB persistence
             openai_api_key: OpenAI API key for embeddings (if None, uses environment)
+            organization_id: Organization ID for data isolation (if None, uses default collection)
         """
         self.chroma_persist_dir = chroma_persist_dir
         self.openai_api_key = openai_api_key or os.getenv('OPENAI_API_KEY')
+        self.organization_id = organization_id
+        
+        # Generate collection name based on organization
+        if organization_id:
+            self.collection_name = f"org_{organization_id}"
+        else:
+            self.collection_name = "default"  # Fallback for legacy support
         
         if not self.openai_api_key:
             raise ValueError("OpenAI API key is required. Set OPENAI_API_KEY environment variable or pass it directly.")
@@ -45,13 +54,15 @@ class VectorStoreService:
             raise ImportError("langchain_openai is required. Install with: pip install langchain-openai")
     
     def _init_database(self):
-        """Initialize ChromaDB instance."""
+        """Initialize ChromaDB instance with organization-specific collection."""
         try:
             from langchain_chroma import Chroma
             self.db = Chroma(
                 persist_directory=self.chroma_persist_dir,
-                embedding_function=self.embeddings
+                embedding_function=self.embeddings,
+                collection_name=self.collection_name
             )
+            print(f"🗄️ [VECTOR_STORE] Initialized ChromaDB with collection: {self.collection_name}")
         except ImportError:
             raise ImportError("langchain_chroma is required. Install with: pip install langchain-chroma")
     
@@ -73,7 +84,7 @@ class VectorStoreService:
             # Test ChromaDB connection
             collection_count = len(self.db.get()['ids'])
             
-            return True, f"Vector store connected successfully. Current documents: {collection_count}, Embedding dimension: {len(embedding)}"
+            return True, f"Vector store connected successfully. Collection: {self.collection_name}, Documents: {collection_count}, Embedding dimension: {len(embedding)}"
             
         except Exception as e:
             return False, f"Vector store connection failed: {str(e)}"
@@ -131,13 +142,23 @@ class VectorStoreService:
     
     def get_duplicate_count(self) -> int:
         """
-        Get count of duplicate pairs without expensive calculations.
-        Just counts documents that have similar_docs metadata.
+        Get count of duplicate pairs using cached data for speed.
         
         Returns:
             Number of duplicate pairs
         """
         try:
+            # Try to get count from cached duplicate pairs first
+            try:
+                cached_pairs = self.db.get(where={"doc_type": "duplicate_pair"})
+                if cached_pairs['documents']:
+                    count = len(cached_pairs['documents'])
+                    print(f"🚀 [DUPLICATE_COUNT] Found {count} cached duplicate pairs")
+                    return count
+            except Exception as e:
+                print(f"⚠️ [DUPLICATE_COUNT] No cached pairs, falling back to metadata scan: {e}")
+            
+            # Fallback to original method
             all_docs = self.db.get()
             
             if not all_docs['documents']:
@@ -322,6 +343,10 @@ class VectorStoreService:
                         'threshold_used': similarity_threshold
                     }
             
+            # Cache duplicate pairs for fast retrieval
+            if similar_pairs:
+                self._cache_duplicate_pairs(similar_pairs, all_docs)
+            
             return True, {
                 'pairs_found': len(similar_pairs),
                 'documents_updated': updated_count,
@@ -338,14 +363,83 @@ class VectorStoreService:
                 'threshold_used': similarity_threshold
             }
     
+    def _cache_duplicate_pairs(self, similar_pairs, all_docs):
+        """
+        Cache duplicate pairs for fast retrieval.
+        Stores each pair as a separate document with doc_type='duplicate_pair'.
+        """
+        try:
+            # First, clear existing cached pairs
+            try:
+                existing_pairs = self.db.get(where={"doc_type": "duplicate_pair"})
+                if existing_pairs['ids']:
+                    self.db.delete(existing_pairs['ids'])
+                    print(f"🗑️ [CACHE] Cleared {len(existing_pairs['ids'])} old cached pairs")
+            except Exception as e:
+                print(f"⚠️ [CACHE] Could not clear old pairs: {e}")
+            
+            # Cache new pairs
+            from langchain.schema import Document
+            cached_documents = []
+            
+            for i, (doc_i_idx, doc_j_idx, similarity_score) in enumerate(similar_pairs):
+                metadata_i = all_docs['metadatas'][doc_i_idx]
+                metadata_j = all_docs['metadatas'][doc_j_idx]
+                
+                # Create duplicate pair data structure
+                pair_data = {
+                    'id': i + 1,
+                    'page1': {
+                        'title': metadata_i.get('title', f'Document {doc_i_idx+1}'),
+                        'url': metadata_i.get('url', ''),
+                        'space': metadata_i.get('space', '')
+                    },
+                    'page2': {
+                        'title': metadata_j.get('title', f'Document {doc_j_idx+1}'),
+                        'url': metadata_j.get('url', ''),
+                        'space': metadata_j.get('space', '')
+                    },
+                    'similarity': round(similarity_score, 3),
+                    'status': 'pending'
+                }
+                
+                # Store as a document with special metadata
+                cached_documents.append(Document(
+                    page_content=str(pair_data),  # Store the pair data as content
+                    metadata={
+                        'doc_type': 'duplicate_pair',
+                        'pair_id': i + 1,
+                        'similarity': similarity_score,
+                        'cached_at': datetime.now(timezone.utc).isoformat()
+                    }
+                ))
+            
+            if cached_documents:
+                self.db.add_documents(cached_documents)
+                print(f"💾 [CACHE] Cached {len(cached_documents)} duplicate pairs for fast retrieval")
+                
+        except Exception as e:
+            print(f"❌ [CACHE] Error caching duplicate pairs: {e}")
+    
     def get_duplicates(self) -> List[Dict[str, Any]]:
         """
         Get all detected duplicate pairs from the vector store.
+        Fast implementation using cached duplicate pairs.
         
         Returns:
             List of duplicate pair dictionaries
         """
         try:
+            # Try to get cached duplicate pairs first
+            try:
+                cached_pairs = self.db.get(where={"doc_type": "duplicate_pair"})
+                if cached_pairs['documents']:
+                    print(f"🚀 [DUPLICATES] Found {len(cached_pairs['documents'])} cached duplicate pairs")
+                    return [eval(doc) for doc in cached_pairs['documents']]
+            except Exception as e:
+                print(f"⚠️ [DUPLICATES] No cached pairs found, falling back to metadata scan: {e}")
+            
+            # Fallback to original method if no cached pairs
             all_docs = self.db.get()
             
             if not all_docs['documents']:
@@ -355,6 +449,10 @@ class VectorStoreService:
             processed_pairs = set()
             
             for i, metadata in enumerate(all_docs['metadatas']):
+                # Skip duplicate pair documents
+                if metadata.get('doc_type') == 'duplicate_pair':
+                    continue
+                    
                 similar_docs_str = metadata.get('similar_docs', '')
                 
                 if not similar_docs_str:
@@ -448,12 +546,15 @@ class VectorStoreConfig:
         return chroma_persist_dir, openai_api_key
     
     @staticmethod
-    def create_service_from_env() -> VectorStoreService:
+    def create_service_from_env(organization_id: Optional[str] = None) -> VectorStoreService:
         """
         Create a VectorStoreService instance from environment variables.
+        
+        Args:
+            organization_id: Organization ID for data isolation (optional)
         
         Returns:
             Configured VectorStoreService instance
         """
         chroma_persist_dir, openai_api_key = VectorStoreConfig.from_environment()
-        return VectorStoreService(chroma_persist_dir, openai_api_key)
+        return VectorStoreService(chroma_persist_dir, openai_api_key, organization_id)

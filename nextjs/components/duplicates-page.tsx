@@ -55,7 +55,7 @@ export default function ContentReportPage({ platform }: ContentReportPageProps) 
     
     try {
       // Fetch only the duplicate pairs
-      const duplicatesArray = await api.getDuplicates();
+      const duplicatesArray = await api.getDuplicates(organization.id);
       
       console.log('Duplicates API response:', duplicatesArray);
       

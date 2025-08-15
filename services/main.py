@@ -38,8 +38,42 @@ app.add_middleware(
 confluence_service: Optional[ConfluenceService] = None
 vector_store_service: Optional[VectorStoreService] = None
 
+# Organization-specific vector store services cache
+organization_vector_stores: Dict[str, VectorStoreService] = {}
+
 # In-memory status tracking
 processing_status = {}
+
+
+def get_vector_store_for_organization(organization_id: Optional[str] = None) -> VectorStoreService:
+    """
+    Get or create a vector store service for the specified organization.
+    
+    Args:
+        organization_id: Organization ID for data isolation. If None, uses global service.
+        
+    Returns:
+        VectorStoreService instance for the organization
+    """
+    global vector_store_service, organization_vector_stores
+    
+    # If no organization_id provided, use global service (for backward compatibility)
+    if not organization_id:
+        if vector_store_service is None:
+            print("🔄 [VECTOR_STORE] Creating global vector store service...")
+            vector_store_service = VectorStoreConfig.create_service_from_env()
+        return vector_store_service
+    
+    # Check if we already have a service for this organization
+    if organization_id in organization_vector_stores:
+        return organization_vector_stores[organization_id]
+    
+    # Create new organization-specific service
+    print(f"🔄 [VECTOR_STORE] Creating vector store service for organization: {organization_id}")
+    org_service = VectorStoreConfig.create_service_from_env(organization_id)
+    organization_vector_stores[organization_id] = org_service
+    
+    return org_service
 
 
 # Pydantic models
@@ -56,6 +90,12 @@ class ProcessingRequest(BaseModel):
     space_keys: List[str] = Field(..., description="List of space keys to process")
     limit_per_space: Optional[int] = Field(None, description="Optional limit per space")
     similarity_threshold: float = Field(0.65, description="Threshold for duplicate detection")
+    organization_id: Optional[str] = Field(None, description="Organization ID for data isolation")
+
+
+class ConnectionStatusRequest(BaseModel):
+    """Request for connection status with organization context."""
+    organization_id: Optional[str] = Field(None, description="Organization ID for data isolation")
 
 
 class ConnectionStatus(BaseModel):
@@ -261,31 +301,41 @@ async def get_processing_status(processing_id: str):
     return processing_status[processing_id]
 
 
-# Get connection status
+# Get connection status (both GET for backward compatibility and POST for organization-specific)
 @app.get("/connection-status")
-async def get_connection_status() -> ConnectionStatus:
-    """Get overall connection and system status."""
+async def get_connection_status(organization_id: Optional[str] = None) -> ConnectionStatus:
+    """Get overall connection and system status with optional organization context."""
+    return await get_connection_status_for_org(ConnectionStatusRequest(organization_id=organization_id))
+
+
+@app.post("/connection-status")
+async def get_connection_status_for_org(request: ConnectionStatusRequest) -> ConnectionStatus:
+    """Get connection and system status for specific organization."""
     try:
-        print("🔍 [CONNECTION-STATUS] Checking system status...")
+        organization_id = request.organization_id
+        print(f"🔍 [CONNECTION-STATUS] Checking system status for organization: {organization_id or 'default'}")
+        
+        # Get organization-specific vector store
+        org_vector_store = get_vector_store_for_organization(organization_id)
         
         # Check vector store
         vector_store_connected = False
         document_count = 0
         
-        if vector_store_service:
-            print("🔍 [CONNECTION-STATUS] Vector store service exists, testing connection...")
-            vs_success, vs_message = vector_store_service.test_connection()
+        if org_vector_store:
+            print(f"🔍 [CONNECTION-STATUS] Vector store service exists for org {organization_id or 'default'}, testing connection...")
+            vs_success, vs_message = org_vector_store.test_connection()
             print(f"🔍 [CONNECTION-STATUS] Vector store test result: {vs_success}, message: {vs_message}")
             vector_store_connected = vs_success
             if vs_success:
                 try:
-                    document_count = vector_store_service.get_document_count()
-                    print(f"🔍 [CONNECTION-STATUS] Document count: {document_count}")
+                    document_count = org_vector_store.get_document_count()
+                    print(f"🔍 [CONNECTION-STATUS] Document count for org {organization_id or 'default'}: {document_count}")
                 except Exception as count_error:
                     print(f"❌ [CONNECTION-STATUS] Failed to get document count: {count_error}")
                     document_count = 0
         else:
-            print("❌ [CONNECTION-STATUS] Vector store service is None")
+            print(f"❌ [CONNECTION-STATUS] Vector store service is None for org {organization_id or 'default'}")
         
         # Determine overall status
         if vector_store_connected:
@@ -303,7 +353,7 @@ async def get_connection_status() -> ConnectionStatus:
             status=status
         )
         
-        print(f"🔍 [CONNECTION-STATUS] Final result: {result}")
+        print(f"🔍 [CONNECTION-STATUS] Final result for org {organization_id or 'default'}: {result}")
         return result
         
     except Exception as e:
@@ -315,16 +365,54 @@ async def get_connection_status() -> ConnectionStatus:
 
 
 # Get duplicates
-@app.get("/duplicates")
-async def get_duplicates() -> List[DuplicatePair]:
-    """Get all detected duplicate document pairs."""
+@app.post("/scan-duplicates")
+async def scan_duplicates_manual(request: ConnectionStatusRequest):
+    """Manually trigger duplicate scanning for an organization to populate cache."""
     try:
-        global vector_store_service
+        organization_id = request.organization_id
+        print(f"🔍 [MANUAL_SCAN] Starting manual duplicate scan for organization: {organization_id}")
         
-        if not vector_store_service:
+        # Get organization-specific vector store
+        org_vector_store = get_vector_store_for_organization(organization_id)
+        
+        if not org_vector_store:
             raise HTTPException(status_code=400, detail="Vector store not initialized")
         
-        duplicates = vector_store_service.get_duplicates()
+        # Run duplicate scanning
+        success, result = org_vector_store.scan_for_duplicates(similarity_threshold=0.65)
+        
+        if success:
+            return {
+                "success": True,
+                "message": f"Duplicate scan completed successfully. Found {result['pairs_found']} pairs.",
+                "pairs_found": result['pairs_found'],
+                "documents_updated": result['documents_updated']
+            }
+        else:
+            return {
+                "success": False,
+                "message": result['message'],
+                "pairs_found": result.get('pairs_found', 0)
+            }
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ [MANUAL_SCAN] Error during manual scan: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to scan duplicates: {str(e)}")
+
+
+@app.get("/duplicates")
+async def get_duplicates(organization_id: Optional[str] = None) -> List[DuplicatePair]:
+    """Get all detected duplicate document pairs for organization."""
+    try:
+        # Get organization-specific vector store
+        org_vector_store = get_vector_store_for_organization(organization_id)
+        
+        if not org_vector_store:
+            raise HTTPException(status_code=400, detail="Vector store not initialized")
+        
+        duplicates = org_vector_store.get_duplicates()
         return [DuplicatePair(**dup) for dup in duplicates]
         
     except HTTPException:
@@ -335,19 +423,20 @@ async def get_duplicates() -> List[DuplicatePair]:
 
 # Get duplicate summary (fast, just counts)
 @app.get("/duplicates/summary")
-async def get_duplicate_summary():
-    """Get duplicate summary without expensive calculations."""
+async def get_duplicate_summary(organization_id: Optional[str] = None):
+    """Get duplicate summary without expensive calculations for organization."""
     try:
-        global vector_store_service
+        # Get organization-specific vector store
+        org_vector_store = get_vector_store_for_organization(organization_id)
         
-        if not vector_store_service:
+        if not org_vector_store:
             raise HTTPException(status_code=400, detail="Vector store not initialized")
         
         # Get basic document count
-        document_count = vector_store_service.get_document_count()
+        document_count = org_vector_store.get_document_count()
         
         # Count documents that have similar_docs metadata (fast)
-        duplicate_count = vector_store_service.get_duplicate_count()
+        duplicate_count = org_vector_store.get_duplicate_count()
         
         return {
             "total_documents": document_count,
@@ -386,9 +475,10 @@ async def clear_all_data():
 # Background processing function
 async def process_documents_background(processing_id: str, request: ProcessingRequest):
     """Background task for processing documents."""
-    global confluence_service, vector_store_service
+    global confluence_service
     
-    print(f"🚀 [PROCESSING {processing_id}] Starting background processing")
+    organization_id = request.organization_id
+    print(f"🚀 [PROCESSING {processing_id}] Starting background processing for organization: {organization_id or 'default'}")
     print(f"📋 [PROCESSING {processing_id}] Request details: {len(request.space_keys)} spaces, threshold: {request.similarity_threshold}")
     
     try:
@@ -422,34 +512,30 @@ async def process_documents_background(processing_id: str, request: ProcessingRe
         
         print(f"✅ [PROCESSING {processing_id}] Confluence connection successful")
         
-        # Initialize vector store if not already done
-        print(f"🗄️ [PROCESSING {processing_id}] Checking vector store service...")
-        if not vector_store_service:
-            try:
-                print(f"🗄️ [PROCESSING {processing_id}] Creating new vector store service...")
-                vector_store_service = VectorStoreConfig.create_service_from_env()
-                print(f"✅ [PROCESSING {processing_id}] Vector store service initialized")
-            except Exception as vs_init_error:
-                print(f"💥 [PROCESSING {processing_id}] Vector store initialization failed: {vs_init_error}")
-                print(f"💥 [PROCESSING {processing_id}] Error type: {type(vs_init_error).__name__}")
-                import traceback
-                print(f"💥 [PROCESSING {processing_id}] Traceback: {traceback.format_exc()}")
-                processing_status[processing_id].update({
-                    "status": "failed",
-                    "message": f"Vector store initialization failed: {vs_init_error}"
-                })
-                return
-        else:
-            print(f"✅ [PROCESSING {processing_id}] Using existing vector store service")
+        # Get organization-specific vector store
+        print(f"🗄️ [PROCESSING {processing_id}] Getting vector store service for organization: {organization_id or 'default'}")
+        try:
+            org_vector_store = get_vector_store_for_organization(organization_id)
+            print(f"✅ [PROCESSING {processing_id}] Vector store service ready for organization: {organization_id or 'default'}")
+        except Exception as vs_init_error:
+            print(f"💥 [PROCESSING {processing_id}] Vector store initialization failed: {vs_init_error}")
+            print(f"💥 [PROCESSING {processing_id}] Error type: {type(vs_init_error).__name__}")
+            import traceback
+            print(f"💥 [PROCESSING {processing_id}] Traceback: {traceback.format_exc()}")
+            processing_status[processing_id].update({
+                "status": "failed",
+                "message": f"Vector store initialization failed: {vs_init_error}"
+            })
+            return
         
         # Check vector store status
         print(f"🔍 [PROCESSING {processing_id}] Checking vector store status...")
         try:
-            vs_success, vs_message = vector_store_service.test_connection()
+            vs_success, vs_message = org_vector_store.test_connection()
             if vs_success:
                 print(f"✅ [PROCESSING {processing_id}] Vector store connection test passed: {vs_message}")
-                doc_count = vector_store_service.get_document_count()
-                print(f"📊 [PROCESSING {processing_id}] Current vector store has {doc_count} documents")
+                doc_count = org_vector_store.get_document_count()
+                print(f"📊 [PROCESSING {processing_id}] Current vector store has {doc_count} documents for org {organization_id or 'default'}")
             else:
                 print(f"❌ [PROCESSING {processing_id}] Vector store connection test failed: {vs_message}")
                 processing_status[processing_id].update({
@@ -500,7 +586,7 @@ async def process_documents_background(processing_id: str, request: ProcessingRe
         # Add documents to vector store
         print(f"💾 [PROCESSING {processing_id}] Adding {len(documents)} documents to vector store...")
         try:
-            add_success, add_message = vector_store_service.add_documents(documents)
+            add_success, add_message = org_vector_store.add_documents(documents)
             
             if not add_success:
                 print(f"❌ [PROCESSING {processing_id}] Vector store addition failed: {add_message}")
@@ -524,8 +610,8 @@ async def process_documents_background(processing_id: str, request: ProcessingRe
         
         # Check vector store status after adding
         try:
-            new_doc_count = vector_store_service.get_document_count()
-            print(f"📊 [PROCESSING {processing_id}] Vector store now has {new_doc_count} documents")
+            new_doc_count = org_vector_store.get_document_count()
+            print(f"📊 [PROCESSING {processing_id}] Vector store now has {new_doc_count} documents for org {organization_id or 'default'}")
         except Exception as vs_error:
             print(f"⚠️ [PROCESSING {processing_id}] Could not get updated document count: {vs_error}")
         
@@ -537,7 +623,7 @@ async def process_documents_background(processing_id: str, request: ProcessingRe
         
         # Scan for duplicates
         print(f"🔍 [PROCESSING {processing_id}] Scanning for duplicates with threshold {request.similarity_threshold}...")
-        scan_success, scan_results = vector_store_service.scan_for_duplicates(
+        scan_success, scan_results = org_vector_store.scan_for_duplicates(
             similarity_threshold=request.similarity_threshold,
             update_existing=True
         )

@@ -47,7 +47,7 @@ export default function DashboardContent({ platform, onPageChange }: DashboardCo
     setLoadingStatus(true);
     try {
       console.log('[DASHBOARD] Checking connection status...');
-      const status = await api.getConnectionStatus();
+      const status = await api.getConnectionStatus(organization.id);
       console.log('[DASHBOARD] Connection status received:', status);
       setConnectionStatus(status);
     } catch (error) {
@@ -107,7 +107,6 @@ export default function DashboardContent({ platform, onPageChange }: DashboardCo
       console.log('[DASHBOARD] Refreshing connection status...');
       await checkConnectionStatus();
       
-      alert('Data ingestion started! This may take a few minutes to complete.');
     } catch (error) {
       console.error('[DASHBOARD] Failed to start sync:', error);
       console.error('[DASHBOARD] Sync error details:', {
@@ -134,7 +133,7 @@ export default function DashboardContent({ platform, onPageChange }: DashboardCo
 
     try {
       // Use lightweight summary API instead of heavy duplicates call
-      const summaryData = await api.getDuplicateSummary();
+      const summaryData = await api.getDuplicateSummary(organization.id);
       
       setDuplicateStats({
         loading: false,
