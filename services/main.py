@@ -82,9 +82,14 @@ app = FastAPI(
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure as needed for production
+    allow_origins=[
+        "http://localhost:3000",  # Local development
+        "https://concatly.vercel.app",  # Vercel production
+        "https://*.vercel.app",  # Vercel preview deployments
+        "*"  # Fallback for other origins
+    ],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -229,6 +234,13 @@ async def startup_event():
         log_error_with_context(logger, e, "vector store service initialization")
         logger.warning("Will try to initialize on first request")
 
+
+# CORS preflight handler
+@app.options("/{path:path}")
+async def options_handler(path: str):
+    """Handle CORS preflight requests"""
+    from fastapi import Response
+    return Response(status_code=200)
 
 # Health check endpoint
 @app.get("/health")
@@ -578,7 +590,7 @@ async def clear_all_data(organization_id: Optional[str] = None):
 async def get_merge_documents(pair_id: int, organization_id: Optional[str] = None):
     """Get full document content for a duplicate pair to enable merging."""
     start_time = time.time()
-    log_api_request(logger, "GET", f"/merge/documents/{pair_id}", organization_id)
+    log_api_request(f"/merge/documents/{pair_id}", "GET", organization_id=organization_id)
     
     try:
         # Get the organization-specific vector store

@@ -139,7 +139,6 @@ export default function ConfluenceSetupPage() {
     setIsLoading(true);
 
     try {
-      console.log('🚀 Starting onboarding API call...');
       const response = await fetch('/api/onboarding/confluence', {
         method: 'POST',
         headers: {
@@ -151,20 +150,15 @@ export default function ConfluenceSetupPage() {
         }),
       });
 
-      console.log('📡 API response status:', response.status);
       const result = await response.json();
-      console.log('📦 API response data:', result);
 
       if (!response.ok) {
-        console.error('❌ API error:', result);
         throw new Error(result.error || 'Failed to save configuration');
       }
 
-      console.log('✅ Onboarding successful, redirecting...');
       // Redirect to dashboard on success
       router.push('/');
     } catch (err) {
-      console.error('💥 Frontend error:', err);
       setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
       setIsLoading(false);

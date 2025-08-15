@@ -46,16 +46,9 @@ export default function DashboardContent({ platform, onPageChange }: DashboardCo
     
     setLoadingStatus(true);
     try {
-      console.log('[DASHBOARD] Checking connection status...');
       const status = await api.getConnectionStatus(organization.id);
-      console.log('[DASHBOARD] Connection status received:', status);
       setConnectionStatus(status);
     } catch (error) {
-      console.error('[DASHBOARD] Failed to check connection status:', error);
-      console.error('[DASHBOARD] Error details:', {
-        message: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : undefined
-      });
       // If the API call fails, assume no setup has been done
       setConnectionStatus(null);
     } finally {
@@ -68,19 +61,12 @@ export default function DashboardContent({ platform, onPageChange }: DashboardCo
     
     setStartingSync(true);
     try {
-      console.log('[DASHBOARD] Starting initial sync for organization:', organization.id);
       
       // Get Confluence credentials from the API (stored in organization settings)
-      console.log('[DASHBOARD] Fetching organization credentials...');
       const credentialsResponse = await fetch('/api/organization/credentials');
       
       if (!credentialsResponse.ok) {
         const errorText = await credentialsResponse.text();
-        console.error('[DASHBOARD] Failed to fetch credentials:', {
-          status: credentialsResponse.status,
-          statusText: credentialsResponse.statusText,
-          body: errorText
-        });
         
         if (credentialsResponse.status === 404) {
           alert('Please complete the onboarding setup first to configure your Confluence connection.');
@@ -91,9 +77,7 @@ export default function DashboardContent({ platform, onPageChange }: DashboardCo
       }
       
       const credentials = await credentialsResponse.json();
-      console.log('[DASHBOARD] Credentials retrieved successfully');
 
-      console.log('[DASHBOARD] Starting sync with backend...');
       const syncResult = await api.startSync({
         organization_id: organization.id,
         confluence_url: credentials.baseUrl,
@@ -101,18 +85,10 @@ export default function DashboardContent({ platform, onPageChange }: DashboardCo
         api_token: credentials.apiKey,
       });
 
-      console.log('[DASHBOARD] Sync started successfully:', syncResult);
-
       // Refresh connection status
-      console.log('[DASHBOARD] Refreshing connection status...');
       await checkConnectionStatus();
       
     } catch (error) {
-      console.error('[DASHBOARD] Failed to start sync:', error);
-      console.error('[DASHBOARD] Sync error details:', {
-        message: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : undefined
-      });
       alert('Failed to start data ingestion. Please check your connection settings.');
     } finally {
       setStartingSync(false);
@@ -144,7 +120,6 @@ export default function DashboardContent({ platform, onPageChange }: DashboardCo
       });
 
     } catch (error) {
-      console.error('Failed to load duplicate data:', error);
       
       setDuplicateStats(prev => ({
         ...prev,

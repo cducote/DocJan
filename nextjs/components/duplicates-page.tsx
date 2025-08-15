@@ -59,8 +59,6 @@ export default function ContentReportPage({ platform }: ContentReportPageProps) 
       // Fetch only the duplicate pairs
       const duplicatesArray = await api.getDuplicates(organization.id);
       
-      console.log('Duplicates API response:', duplicatesArray);
-      
       // Create the data structure with just the duplicate pairs
       const combinedData: DuplicatesData = {
         duplicate_pairs: duplicatesArray,
@@ -71,7 +69,6 @@ export default function ContentReportPage({ platform }: ContentReportPageProps) 
       
       setDuplicatesData(combinedData);
     } catch (err) {
-      console.error('Failed to load duplicates data:', err);
       setError('Failed to load content report. Please ensure data ingestion is complete.');
     } finally {
       setLoading(false);

@@ -1,12 +1,12 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useOrganization } from '@clerk/nextjs';
 import { ArrowLeft, Zap, FileText, ExternalLink, Loader2, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { api, DocumentDetail, MergeResult } from '@/lib/api';
 
-export default function MergePage() {
+function MergePageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { organization } = useOrganization();
@@ -41,7 +41,6 @@ export default function MergePage() {
       const data = await api.getMergeDocuments(parseInt(pairId), organization.id);
       setMergeData(data);
     } catch (err) {
-      console.error('Failed to load merge data:', err);
       setError('Failed to load documents for merging');
     } finally {
       setLoading(false);
@@ -63,7 +62,6 @@ export default function MergePage() {
       setMergedContent(result.merged_content);
       setSuccess('Documents merged successfully!');
     } catch (err) {
-      console.error('Failed to merge documents:', err);
       setError('Failed to merge documents');
     } finally {
       setMerging(false);
@@ -91,7 +89,6 @@ export default function MergePage() {
         router.push('/');
       }, 2000);
     } catch (err) {
-      console.error('Failed to apply merge:', err);
       setError('Failed to apply merge to Confluence');
     } finally {
       setApplying(false);
@@ -377,5 +374,24 @@ export default function MergePage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function MergePage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-background p-6">
+        <div className="max-w-7xl mx-auto">
+          <div className="flex items-center justify-center h-64">
+            <div className="flex items-center space-x-3">
+              <Loader2 className="h-6 w-6 animate-spin text-primary" />
+              <span className="text-lg text-foreground">Loading...</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    }>
+      <MergePageContent />
+    </Suspense>
   );
 }

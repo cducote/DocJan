@@ -25,12 +25,10 @@ export default function SettingsPage({ platform }: SettingsPageProps) {
     setMessage(null);
     
     try {
-      console.log('[SETTINGS] Deleting data for organization:', organization.id);
       await clearOrganizationData(organization.id);
       setMessage({ type: 'success', text: 'Organization data successfully deleted. You can now re-ingest documents.' });
       setShowConfirmDialog(false);
     } catch (error) {
-      console.error('Error deleting organization data:', error);
       setMessage({ type: 'error', text: 'Failed to delete organization data. Please try again.' });
     } finally {
       setIsDeleting(false);
