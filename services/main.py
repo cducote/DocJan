@@ -204,6 +204,12 @@ async def health_check():
     return health_info
 
 
+@app.get("/ping")
+async def ping():
+    """Simple ping endpoint for load balancer health checks - no logging."""
+    return {"status": "ok"}
+
+
 # Connection test endpoint
 @app.post("/test-connection")
 async def test_connection(credentials: ConfluenceCredentials):

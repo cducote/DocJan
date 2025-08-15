@@ -48,16 +48,16 @@ spec:
             cpu: "250m"
         livenessProbe:
           httpGet:
-            path: /health
+            path: /ping
             port: 8000
           initialDelaySeconds: 30
-          periodSeconds: 30
+          periodSeconds: 60  # Reduced from 30 to 60 seconds
         readinessProbe:
           httpGet:
-            path: /health
+            path: /health  # Keep this detailed for readiness
             port: 8000
           initialDelaySeconds: 5
-          periodSeconds: 30
+          periodSeconds: 60  # Reduced from 30 to 60 seconds
         volumeMounts:
         - name: chroma-storage
           mountPath: /app/chroma_store
