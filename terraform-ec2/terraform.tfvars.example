@@ -1,0 +1,24 @@
+# Terraform EC2 Variables Example
+# Copy this file to terraform.tfvars and fill in your actual values
+# NEVER commit terraform.tfvars with real secrets!
+
+# AWS Configuration
+aws_region = "us-east-1"
+vpc_id = "vpc-xxxxxxxxxxxxxxxxx"  # Your VPC ID
+availability_zone = "us-east-1a"
+
+# EC2 Configuration
+instance_type = "t3.small"
+key_pair_name = "your-key-name"   # Your EC2 key pair name
+
+# Application Configuration
+docker_image = "your-account.dkr.ecr.us-east-1.amazonaws.com/your-repo:tag"
+
+# Secrets (NEVER commit these values!)
+openai_api_key = "sk-proj-your-openai-api-key-here"
+clerk_secret_key = "sk_test_your-clerk-secret-key-here"
+
+# Load Balancer Configuration
+enable_alb = true
+ssl_certificate_arn = "arn:aws:acm:us-east-1:your-account:certificate/your-cert-id"
+domain_name = "your-domain.com"

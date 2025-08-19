@@ -128,6 +128,12 @@ terraform.tfstate.backup
 *.tfstate.*
 .terraformrc
 terraform.rc
+*.tfvars
+terraform.tfvars
+terraform.tfvars.backup
+
+# Old EKS terraform and k8s files (archived)
+eks_terraform_old/
 
 test_services.py
 ui/
