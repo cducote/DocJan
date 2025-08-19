@@ -142,3 +142,5 @@ ui/
 nextjs/app/api/migrate-credentials/
 nextjs/app/test-api/
 nextjs/components/test-api-page.tsx
+
+PROJECT_IMPLEMENTATION.md
