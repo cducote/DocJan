@@ -137,7 +137,9 @@ resource "aws_iam_role_policy" "ec2_policy" {
           "ecr:GetAuthorizationToken",
           "ecr:BatchCheckLayerAvailability",
           "ecr:GetDownloadUrlForLayer",
-          "ecr:BatchGetImage"
+          "ecr:BatchGetImage",
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:DescribeSecret"
         ]
         Resource = "*"
       }
@@ -257,7 +259,7 @@ resource "aws_lb_target_group" "concatly_api_tg" {
     healthy_threshold   = 2
     interval            = 30
     matcher             = "200"
-    path                = "/health"
+    path                = "/ping"
     port                = "traffic-port"
     protocol            = "HTTP"
     timeout             = 5

@@ -15,7 +15,7 @@
     "chroma_store/",
     "*.log"
   ],
-  "exec": "cd /Users/chrissyd/DocJan && source .venv/bin/activate && python services/main.py",
+  "exec": "cd /Users/chrissyd/DocJan && source .venv/bin/activate && python -m services.main",
   "env": {
     "PYTHONPATH": "/Users/chrissyd/DocJan"
   },

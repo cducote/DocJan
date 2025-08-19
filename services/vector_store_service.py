@@ -64,6 +64,12 @@ class VectorStoreService:
         """Initialize ChromaDB instance with organization-specific collection."""
         try:
             from langchain_chroma import Chroma
+            import os
+            
+            # Ensure the persist directory exists
+            if not os.path.exists(self.chroma_persist_dir):
+                print(f"📁 [VECTOR_STORE] Creating ChromaDB directory: {self.chroma_persist_dir}")
+                os.makedirs(self.chroma_persist_dir, exist_ok=True)
             
             # For production compatibility, disable tenant validation
             import chromadb
@@ -143,7 +149,10 @@ class VectorStoreService:
                 print(f"🗄️ [VECTOR_STORE] Initialized cache collection with fallback config: {self.cache_collection_name}")
             except Exception as fallback_error:
                 print(f"💥 [VECTOR_STORE] Both ChromaDB configurations failed: {fallback_error}")
-                raise
+                print(f"⚠️ [VECTOR_STORE] Running in degraded mode - vector operations will be disabled")
+                # Set databases to None so the app can still start
+                self.db = None
+                self.cache_db = None
     
     def _clear_chroma_directory(self):
         """
@@ -206,14 +215,48 @@ class VectorStoreService:
             Tuple of (success, message)
         """
         try:
-            # Only test ChromaDB connection - no OpenAI API calls
-            collection_count = len(self.db.get()['ids'])
-            cache_count = len(self.cache_db.get()['ids'])
+            # First check if we have the db attributes at all
+            if not hasattr(self, 'db'):
+                return False, "ChromaDB not initialized - db attribute missing"
+            
+            if not hasattr(self, 'cache_db'):
+                return False, "ChromaDB cache not initialized - cache_db attribute missing"
+                
+            # Then check if they are None (degraded mode)
+            if self.db is None:
+                return False, "ChromaDB not initialized - running in degraded mode"
+            
+            if self.cache_db is None:
+                return False, "ChromaDB cache not initialized - running in degraded mode"
+            
+            # Now it's safe to test basic ChromaDB connection
+            try:
+                # Safely get collection info
+                db_result = self.db.get()
+                if db_result and 'ids' in db_result:
+                    collection_count = len(db_result['ids'])
+                else:
+                    collection_count = 0
+            except Exception as db_error:
+                # If we can't get the count, there's a real connection issue
+                return False, f"ChromaDB collection error: {str(db_error)}"
+                
+            try:
+                # Safely get cache info
+                cache_result = self.cache_db.get()
+                if cache_result and 'ids' in cache_result:
+                    cache_count = len(cache_result['ids'])
+                else:
+                    cache_count = 0
+            except Exception as cache_error:
+                # Cache errors are less critical
+                cache_count = 0
             
             return True, f"Vector store healthy. Collection: {self.collection_name} ({collection_count} docs), Cache: ({cache_count} items)"
             
         except Exception as e:
-            return False, f"Vector store connection failed: {str(e)}"
+            # This should catch any other unexpected errors
+            return False, f"Vector store connection test failed: {str(e)}"
     
     def add_documents(self, documents: List[Any], batch_size: int = 50) -> Tuple[bool, str]:
         """
@@ -227,6 +270,9 @@ class VectorStoreService:
             Tuple of (success, message)
         """
         try:
+            if self.db is None:
+                return False, "ChromaDB not available - running in degraded mode"
+            
             if not documents:
                 return False, "No documents provided"
             

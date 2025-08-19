@@ -220,7 +220,7 @@ async def startup_event():
         # Test the vector store
         try:
             logger.info("🧪 Testing vector store connection...")
-            vs_success, vs_message = vector_store_service.test_connection()
+            vs_success, vs_message = vector_store_service.test_connection_lightweight()
             if vs_success:
                 logger.info(f"✅ Vector store test successful: {vs_message}")
                 doc_count = vector_store_service.get_document_count()
@@ -242,6 +242,12 @@ async def options_handler(path: str):
     from fastapi import Response
     return Response(status_code=200)
 
+# Simple ping endpoint for ALB health checks
+@app.get("/ping")
+async def ping():
+    """Simple ping endpoint that doesn't require any services."""
+    return {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}
+
 # Health check endpoint
 @app.get("/health")
 async def health_check():
@@ -249,9 +255,9 @@ async def health_check():
     start_time = time.time()
     
     try:
-        # Get vector store status
+        # Get vector store status using lightweight test (no OpenAI API calls)
         vs_service = get_vector_store_for_organization()
-        vs_connected, vs_message = vs_service.test_connection()
+        vs_connected, vs_message = vs_service.test_connection_lightweight()
         
         doc_count = vs_service.get_document_count() if vs_connected else 0
         

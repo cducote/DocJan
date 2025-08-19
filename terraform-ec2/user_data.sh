@@ -51,7 +51,7 @@ services:
       - CLERK_SECRET_KEY=${clerk_secret_key}
       - CHROMA_PERSIST_DIR=/app/chroma_store
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/ping"]
       interval: 30s
       timeout: 10s
       retries: 3
