@@ -1,0 +1,14 @@
+[
+  {
+    "id": "6af2e737-7a1c-4e0f-8eb2-44b454de6ef4",
+    "kept_page_id": "8126750",
+    "deleted_page_id": "8126771",
+    "kept_title": "Password Reset Instructions - SD",
+    "deleted_title": "Account Password Recovery - SD",
+    "timestamp": "2025-08-20T14:14:27.597157Z",
+    "status": "completed",
+    "merged_content": "<h1>Password Reset and Recovery Instructions - SD</h1>\n\n<p>If you need to reset or recover your password for the SD system, follow the steps outlined below to ensure secure access to your account.</p>\n\n<h2>Steps to Reset or Recover Your Password</h2>\n\n<ol>\n    <li>Go to the main login page of the SD system.</li>\n    <li>Click on the <strong>\"Forgot Password\"</strong> link.</li>\n    <li>Enter your registered email address.</li>\n    <li>Check your email inbox for reset instructions.</li>\n    <li>Click the secure reset link provided in the email.</li>\n    <li>Create a new strong password.</li>\n</ol>\n\n<h2>Password Requirements</h2>\n\n<ul>\n    <li>Password must be at least 8 characters long.</li>\n    <li>Include uppercase and lowercase letters.</li>\n    <li>Incorporate numbers and special characters.</li>\n</ul>\n\n<p>This procedure applies to all SD system accounts and ensures secure access recovery.</p>\n\n<p><em>Merged by Concatly</em></p>",
+    "kept_url": "",
+    "deleted_url": ""
+  }
+]
