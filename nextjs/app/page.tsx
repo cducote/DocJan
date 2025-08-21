@@ -1,7 +1,7 @@
 'use client';
 
 import { useAuth, useOrganization, useClerk } from '@clerk/nextjs';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Sidebar from '../components/sidebar';
 import DashboardContent from '../components/dashboard-content';
@@ -13,7 +13,7 @@ import SettingsPage from '../components/settings-page';
 import { ThemeToggle } from '../components/theme-toggle';
 import { Header } from '../components/header';
 
-export default function Home() {
+function HomeContent() {
   const { isSignedIn, isLoaded: authLoaded } = useAuth();
   const { organization, isLoaded: orgLoaded } = useOrganization();
   const { signOut } = useClerk();
@@ -124,5 +124,20 @@ export default function Home() {
         </main>
       </div>
     </div>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    }>
+      <HomeContent />
+    </Suspense>
   );
 }

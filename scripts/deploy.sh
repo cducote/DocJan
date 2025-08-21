@@ -40,6 +40,8 @@ echo "Current running image tag: ${CURRENT_IMAGE}"
 
 ssh -i /Users/chrissyd/DocJan/concatly-key.pem -o StrictHostKeyChecking=no ec2-user@${EC2_IP} << EOF
 cd /app
+echo "Authenticating with ECR..."
+aws ecr get-login-password --region ${AWS_REGION} | sudo docker login --username AWS --password-stdin ${ECR_REPO_URI%/*}
 echo "Pulling new image..."
 sudo docker pull ${ECR_REPO_URI}:${NEW_TAG}
 echo "Testing new container startup..."

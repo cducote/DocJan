@@ -7,8 +7,20 @@ import { ThemeProvider } from '../components/theme-provider'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'Concatly - Confluence Duplicate Manager',
+  title: 'Concatly Application',
   description: 'Manage and merge duplicate content in Confluence',
+  icons: {
+    icon: [
+      {
+        url: '/catlight.png',
+        media: '(prefers-color-scheme: light)',
+      },
+      {
+        url: '/catdark.png',
+        media: '(prefers-color-scheme: dark)',
+      },
+    ],
+  },
 }
 
 export default function RootLayout({
@@ -18,6 +30,18 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        <link
+          rel="icon"
+          href="/catlight.png"
+          media="(prefers-color-scheme: light)"
+        />
+        <link
+          rel="icon"
+          href="/catdark.png"
+          media="(prefers-color-scheme: dark)"
+        />
+      </head>
       <body className={inter.className}>
         <ThemeProvider>
           <ClientClerkProvider>
