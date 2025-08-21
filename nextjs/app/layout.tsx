@@ -6,8 +6,16 @@ import { ThemeProvider } from '../components/theme-provider'
 
 const inter = Inter({ subsets: ['latin'] })
 
+// Dynamic title based on environment
+const getTitle = () => {
+  if (process.env.NODE_ENV === 'development') {
+    return 'Concatly App - Local'
+  }
+  return 'Concatly App - Dev'
+}
+
 export const metadata: Metadata = {
-  title: 'Concatly Application',
+  title: getTitle(),
   description: 'Manage and merge duplicate content in Confluence',
   icons: {
     icon: [
