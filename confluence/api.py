@@ -226,11 +226,12 @@ def extract_page_id_from_url(url):
         return None
 
 
-def apply_merge_to_confluence(main_doc, similar_doc, merged_content, keep_main=True, user_credentials=None):
+def apply_merge_to_confluence(main_doc, similar_doc, merged_content, keep_main=True, user_credentials=None, organization_id=None):
     """Apply the merge to Confluence: update one page, delete the other, and track the operation"""
     try:
         logger.info(f"🔄 Starting Confluence merge operation (keep_main={keep_main})")
         logger.info(f"🔍 User credentials provided: {bool(user_credentials)}")
+        logger.info(f"🔍 Organization ID: {organization_id}")
         if user_credentials:
             logger.info(f"🔍 User credentials keys: {list(user_credentials.keys())}")
             logger.info(f"🔍 Raw user_credentials: {user_credentials}")
@@ -297,14 +298,29 @@ def apply_merge_to_confluence(main_doc, similar_doc, merged_content, keep_main=T
         
         logger.info(f"📝 Keep page: '{keep_title}' (ID: {keep_page_id})")
         logger.info(f"🗑️ Delete page: '{delete_title}' (ID: {delete_page_id})")
+        # Get current page version before making changes (for accurate undo)
+        pre_merge_version = None
+        try:
+            if user_credentials and user_credentials.get('confluence_username') and user_credentials.get('confluence_api_token'):
+                pre_merge_version = get_page_version(
+                    keep_page_id, 
+                    user_credentials['confluence_username'],
+                    user_credentials['confluence_api_token'],
+                    user_credentials.get('confluence_base_url', 'https://default.atlassian.net/wiki')
+                )
+                logger.info(f"📊 Current page version before merge: {pre_merge_version}")
+        except Exception as e:
+            logger.warning(f"⚠️ Could not get pre-merge version: {e}")
         
         # Store merge operation BEFORE making changes
         try:
             from models.database import store_merge_operation
             logger.info("💾 Storing merge operation for tracking...")
-            store_success, store_message = store_merge_operation(
+            store_success, store_message, merge_id = store_merge_operation(
                 keep_page_id, delete_page_id, merged_content, 
-                keep_title, delete_title, keep_url, delete_url
+                keep_title, delete_title, keep_url, delete_url,
+                organization_id=organization_id,
+                pre_merge_version=pre_merge_version
             )
             
             if not store_success:
@@ -555,150 +571,86 @@ def load_documents_from_spaces(space_keys, limit_per_space=50, user_credentials=
 
 
 def undo_merge_operation(merge_id, user_credentials=None):
-    """Undo a merge operation using Confluence native restore capabilities
+    """Undo a merge operation using organization-aware storage and improved version tracking
     
     Args:
         merge_id (str): The ID of the merge operation to undo
         user_credentials (dict): User's Confluence credentials
     """
     try:
-        import json
-        import os
         from datetime import datetime
+        from services.merge_operations_storage import merge_operations_storage
         
-        # Load merge operations from the JSON file
-        merge_file = "merge_operations.json"
-        if not os.path.exists(merge_file):
-            return False, "No merge operations found - merge history file doesn't exist"
+        print(f"[DEBUG] Starting undo for merge operation: {merge_id}")
         
-        with open(merge_file, 'r') as f:
-            merge_operations = json.load(f)
+        # Extract organization from credentials or use default
+        organization_id = user_credentials.get('organization_id', 'default') if user_credentials else 'default'
         
-        # Find the merge operation
-        merge_record = None
-        for operation in merge_operations:
-            if operation.get('id') == merge_id:
-                merge_record = operation
-                break
+        # Get the specific operation
+        operation = merge_operations_storage.get_merge_operation(organization_id, merge_id)
         
-        if not merge_record:
-            return False, f"Merge operation {merge_id} not found"
+        if not operation:
+            return False, f"Merge operation {merge_id} not found for organization {organization_id}"
         
-        if merge_record.get('status') == 'undone':
-            return False, "This merge operation has already been undone"
+        if operation.get('status') != 'completed':
+            return False, f"Can only undo completed operations. Current status: {operation.get('status')}"
         
-        kept_page_id = merge_record['kept_page_id']
-        deleted_page_id = merge_record['deleted_page_id']
-        kept_title = merge_record['kept_title']
-        deleted_title = merge_record['deleted_title']
+        # Extract Confluence credentials
+        username = user_credentials.get('confluence_username') if user_credentials else None
+        api_token = user_credentials.get('confluence_api_token') if user_credentials else None
+        confluence_base_url = user_credentials.get('confluence_base_url', 'https://default.atlassian.net/wiki') if user_credentials else 'https://default.atlassian.net/wiki'
         
-        # Step 1: Get the current version of the kept page and revert to previous version
-        print(f"DEBUG: Attempting to revert page {kept_page_id} to previous version")
-        current_version = get_page_version(kept_page_id, user_credentials)
-        if current_version is None:
-            return False, "Could not get current page version"
+        if not username or not api_token:
+            return False, "Missing Confluence credentials for undo operation"
         
-        # Revert to the version before the merge (current - 1)
-        previous_version = current_version - 1
-        if previous_version < 1:
-            return False, "Cannot revert - page is already at version 1"
+        page_id = operation['kept_page_id'] or operation.get('target_page_id')
         
-        revert_success, revert_message = restore_confluence_page_version(
-            kept_page_id, previous_version, user_credentials
+        # Get the pre-merge version from the operation record
+        pre_merge_version = operation.get('pre_merge_version')
+        if not pre_merge_version:
+            # Fallback to old logic for operations without pre_merge_version
+            current_version = get_page_version(page_id, username, api_token, confluence_base_url)
+            if not current_version:
+                return False, f"Could not get current version for page {page_id}"
+            pre_merge_version = current_version - 1
+            print(f"[DEBUG] Using fallback logic - Current version: {current_version}, Target version: {pre_merge_version}")
+        else:
+            print(f"[DEBUG] Using stored pre-merge version: {pre_merge_version}")
+        
+        # Restore to pre-merge version
+        result = restore_confluence_page_version(
+            page_id, pre_merge_version, username, api_token, confluence_base_url,
+            f"Undoing merge operation {merge_id} - restoring to pre-merge state"
         )
-        if not revert_success:
-            return False, f"Failed to revert kept page to version {previous_version}: {revert_message}"
         
-        print(f"DEBUG: Successfully reverted kept page to version {previous_version}")
-        
-        # Step 2: Restore the deleted page from trash
-        print(f"DEBUG: Attempting to restore deleted page {deleted_page_id} from trash")
-        restore_success, restore_message = restore_deleted_confluence_page_from_trash(deleted_page_id)
-        if not restore_success:
-            return False, f"Failed to restore deleted page: {restore_message}"
-        
-        print(f"DEBUG: Successfully restored deleted page from trash")
-        
-        # Step 3: Update merge operation status
-        merge_record['status'] = 'undone'
-        merge_record['undo_timestamp'] = datetime.utcnow().isoformat() + 'Z'
-        
-        # Save updated merge operations back to file
-        with open(merge_file, 'w') as f:
-            json.dump(merge_operations, f, indent=2)
-        
-        # Step 4: Re-ingest both restored pages to ChromaDB and scan for duplicates
-        print("DEBUG: Re-ingesting restored pages to ChromaDB...")
-        
-        try:
-            from langchain_community.document_loaders import ConfluenceLoader
-            from models.database import get_document_database
-            import hashlib
+        if result:
+            # Mark operation as undone using new storage
+            updates = {
+                'status': 'undone',
+                'undone_at': datetime.now().isoformat(),
+                'restored_to_version': pre_merge_version
+            }
             
-            # Re-load both pages from Confluence and add them back to ChromaDB
-            loader = ConfluenceLoader(
-                url=get_confluence_base_url(user_credentials),
-                username=get_confluence_auth(user_credentials)[0],
-                api_key=get_confluence_auth(user_credentials)[1],
-                page_ids=[kept_page_id, deleted_page_id],
-                include_attachments=False,
-                limit=None
+            success = merge_operations_storage.update_merge_operation(
+                organization_id, merge_id, updates
             )
             
-            restored_documents = loader.load()
-            print(f"DEBUG: Loaded {len(restored_documents)} restored documents from Confluence")
-            
-            # Add the restored documents back to ChromaDB
-            if restored_documents:
-                db = get_document_database()
-                doc_ids = []
-                for doc in restored_documents:
-                    page_id = extract_page_id_from_url(doc.metadata.get('source', ''))
-                    if page_id:
-                        doc_id = f"page_{page_id}"
-                        doc.metadata['doc_id'] = doc_id
-                        doc_ids.append(doc_id)
-                    else:
-                        # Fallback to hash-based ID
-                        title = doc.metadata.get('title', 'untitled')
-                        doc_id = f"doc_{hashlib.md5(title.encode()).hexdigest()[:8]}"
-                        doc.metadata['doc_id'] = doc_id
-                        doc_ids.append(doc_id)
-                
-                # Add to ChromaDB
-                db.add_documents(restored_documents, ids=doc_ids)
-                print(f"DEBUG: Added {len(restored_documents)} restored documents to ChromaDB")
-            
-        except Exception as e:
-            print(f"DEBUG: Error re-ingesting restored pages: {e}")
-            # Continue anyway - the main undo operation succeeded
-        
-        # Step 5: Automatically scan for duplicates after undo
-        print("DEBUG: Running automatic duplicate detection after undo...")
-        try:
-            from models.database import scan_for_duplicates
-            scan_result = scan_for_duplicates(similarity_threshold=0.65, update_existing=True)
-            
-            if scan_result.get('success', False):
-                pairs_found = scan_result.get('pairs_found', 0)
-                docs_updated = scan_result.get('documents_updated', 0)
-                print(f"DEBUG: Duplicate scan completed - found {pairs_found} pairs, updated {docs_updated} documents")
-                undo_message = f"Merge operation successfully undone. Both original pages '{kept_title}' and '{deleted_title}' have been restored. Automatic duplicate scan found {pairs_found} duplicate pairs."
+            if success:
+                print(f"[DEBUG] Successfully undid merge operation {merge_id}")
+                return True, f'Successfully undid merge operation {merge_id}'
             else:
-                print(f"DEBUG: Duplicate scan failed: {scan_result.get('message', 'Unknown error')}")
-                undo_message = f"Merge operation successfully undone. Both original pages '{kept_title}' and '{deleted_title}' have been restored. Note: Automatic duplicate scan encountered an issue - please run manual scan if needed."
+                return False, f"Restored page but failed to update operation status"
+        else:
+            return False, f"Failed to restore page {page_id} to version {pre_merge_version}"
             
-        except Exception as e:
-            print(f"DEBUG: Error during duplicate scan: {e}")
-            undo_message = f"Merge operation successfully undone. Both original pages '{kept_title}' and '{deleted_title}' have been restored. Note: Automatic duplicate scan could not be run - please run manual scan if needed."
-        
-        return True, undo_message
-        
     except Exception as e:
-        return False, f"Error undoing merge operation: {str(e)}"
+        print(f"[ERROR] Error in undo_merge_operation: {e}")
+        import traceback
+        traceback.print_exc()
+        return False, f"Undo operation failed: {str(e)}"
 
 
-def restore_confluence_page_version(page_id, version_number, user_credentials=None):
+def restore_confluence_page_version(page_id, version_number, username, api_token, confluence_base_url, message=None):
     """Restore a Confluence page to a specific version
     
     Args:

@@ -84,9 +84,9 @@ function MergePageContent() {
       
       setSuccess('Merge applied successfully to Confluence!');
       
-      // Redirect back to home page (Content Report) after a short delay
+      // Redirect back to main app with content-report page and refresh
       setTimeout(() => {
-        router.push('/');
+        router.push('/?page=content-report&refresh=true');
       }, 2000);
     } catch (err) {
       setError('Failed to apply merge to Confluence');
@@ -119,10 +119,10 @@ function MergePageContent() {
             <h2 className="text-xl font-semibold mb-2 text-foreground">Unable to Load Documents</h2>
             <p className="text-muted-foreground mb-4">{error}</p>
             <button
-              onClick={() => router.push('/duplicates')}
+              onClick={() => router.push('/?page=content-report&refresh=true')}
               className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
             >
-              Back to Duplicates
+              Back to Content Report
             </button>
           </div>
         </div>
@@ -137,11 +137,11 @@ function MergePageContent() {
         <div className="mb-8">
           <div className="flex items-center space-x-4 mb-4">
             <button
-              onClick={() => router.push('/duplicates')}
+              onClick={() => router.push('/?page=content-report&refresh=true')}
               className="flex items-center space-x-2 text-muted-foreground hover:text-foreground transition-colors"
             >
               <ArrowLeft className="h-5 w-5" />
-              <span>Back to Duplicates</span>
+              <span>Back to Content Report</span>
             </button>
           </div>
           

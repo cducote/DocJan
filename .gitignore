@@ -31,6 +31,7 @@ ENV/
 
 # Vector database storage
 chroma_store/
+local_storage/
 
 # Prompt templates (if they contain sensitive info)
 # prompts/
@@ -59,7 +60,8 @@ wheels/
 .installed.cfg
 *.egg
 MANIFEST
-
+seed.py
+reset.py
 # PyInstaller
 *.manifest
 *.spec

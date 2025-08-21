@@ -1,22 +1,7 @@
 """
 FastAPI Application for Confluence Document Processing Service.
 Clean, containerized backend for connecting to Confluence, processing documents,
-and genera    try:
-        logger.info("� Environment check - OpenAI API Key: ✅ Set" if os.getenv('OPENAI_API_KEY') else "🔑 Environment check - OpenAI API Key: ❌ Missing")
-        
-        # Get actual configuration values that will be used
-        from services.vector_store_service import VectorStoreConfig
-        chroma_persist_dir, _ = VectorStoreConfig.from_environment()
-        logger.info(f"💾 ChromaDB path (configured): {chroma_persist_dir}")
-        logger.info(f"📂 Current working directory: {os.getcwd()}")
-        
-        # Show absolute path for clarity
-        from pathlib import Path
-        abs_chroma_path = Path(chroma_persist_dir).resolve()
-        logger.info(f"💾 ChromaDB path (absolute): {abs_chroma_path}")
-        logger.info(f"📁 ChromaDB exists: {'✅' if abs_chroma_path.exists() else '❌'}")
-        
-        logger.info("🗄️ Initializing vector store service from environment...")mbeddings.
+and generating embeddings.
 """
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
@@ -32,8 +17,15 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Import our service modules
-from .confluence_service import ConfluenceService, ConfluenceConfig
-from .vector_store_service import VectorStoreService, VectorStoreConfig
+try:
+    from .confluence_service import ConfluenceService, ConfluenceConfig
+    from .vector_store_service import VectorStoreService, VectorStoreConfig
+    from .duplicate_storage import DuplicateStorageService
+except ImportError:
+    # When running directly, use absolute imports
+    from confluence_service import ConfluenceService, ConfluenceConfig
+    from vector_store_service import VectorStoreService, VectorStoreConfig
+    from duplicate_storage import DuplicateStorageService
 
 # Import logging
 import logging
@@ -96,6 +88,7 @@ app.add_middleware(
 # Global service instances (will be initialized on startup)
 confluence_service: Optional[ConfluenceService] = None
 vector_store_service: Optional[VectorStoreService] = None
+duplicate_storage_service: Optional[DuplicateStorageService] = None
 
 # Organization-specific vector store services cache
 organization_vector_stores: Dict[str, VectorStoreService] = {}
@@ -202,20 +195,26 @@ class ApplyMergeRequest(BaseModel):
 @app.on_event("startup")
 async def startup_event():
     """Initialize services on startup."""
-    global vector_store_service
+    global vector_store_service, duplicate_storage_service
     
     # Log startup
     log_startup("main")
     
     try:
-        logger.info("� Environment check - OpenAI API Key: ✅ Set" if os.getenv('OPENAI_API_KEY') else "🔑 Environment check - OpenAI API Key: ❌ Missing")
-        logger.info(f"�️ Environment check - ChromaDB persist dir: {os.getenv('CHROMA_PERSIST_DIRECTORY', './chroma_store')}")
-        logger.info(f"� Current working directory: {os.getcwd()}")
+        logger.info("🔑 Environment check - OpenAI API Key: ✅ Set" if os.getenv('OPENAI_API_KEY') else "🔑 Environment check - OpenAI API Key: ❌ Missing")
+        logger.info(f"🗄️ Environment check - ChromaDB persist dir: {os.getenv('CHROMA_PERSIST_DIRECTORY', './chroma_store')}")
+        logger.info(f"📂 Current working directory: {os.getcwd()}")
         
         logger.info("🗄️ Initializing vector store service from environment...")
         # Initialize vector store service from environment
         vector_store_service = VectorStoreConfig.create_service_from_env()
         logger.info("✅ Vector store service initialized successfully")
+        
+        logger.info("💾 Initializing duplicate storage service...")
+        # Initialize duplicate storage service
+        duplicate_storage_service = DuplicateStorageService()
+        storage_info = duplicate_storage_service.get_storage_info()
+        logger.info(f"✅ Duplicate storage initialized: {storage_info['storage_type']}")
         
         # Test the vector store
         try:
@@ -421,8 +420,20 @@ async def get_connection_status_for_org(request: ConnectionStatusRequest) -> Con
             vector_store_connected = vs_success
             if vs_success:
                 try:
-                    document_count = org_vector_store.get_document_count()
-                    print(f"🔍 [CONNECTION-STATUS] Document count for org {organization_id or 'default'}: {document_count}")
+                    # Use stored metadata instead of expensive ChromaDB query
+                    if duplicate_storage_service and organization_id:
+                        metadata = duplicate_storage_service.get_organization_metadata(organization_id)
+                        if metadata and metadata.get('total_documents'):
+                            document_count = metadata['total_documents']
+                            print(f"🔍 [CONNECTION-STATUS] Using stored document count for org {organization_id}: {document_count}")
+                        else:
+                            # Fallback to ChromaDB only if no stored metadata
+                            document_count = org_vector_store.get_document_count()
+                            print(f"🔍 [CONNECTION-STATUS] No stored metadata, using ChromaDB count for org {organization_id}: {document_count}")
+                    else:
+                        # Fallback to ChromaDB for non-organization requests
+                        document_count = org_vector_store.get_document_count()
+                        print(f"🔍 [CONNECTION-STATUS] Using ChromaDB count for org {organization_id or 'default'}: {document_count}")
                 except Exception as count_error:
                     print(f"❌ [CONNECTION-STATUS] Failed to get document count: {count_error}")
                     document_count = 0
@@ -494,22 +505,74 @@ async def scan_duplicates_manual(request: ConnectionStatusRequest):
         raise HTTPException(status_code=500, detail=f"Failed to scan duplicates: {str(e)}")
 
 
-@app.get("/duplicates")
-async def get_duplicates(organization_id: Optional[str] = None) -> List[DuplicatePair]:
-    """Get all detected duplicate document pairs for organization."""
+async def refresh_duplicates_for_organization(organization_id: str, force_rescan: bool = False) -> bool:
+    """Refresh duplicate detection for an organization and store results."""
     try:
+        logger.info(f"🔄 Starting duplicate refresh for organization {organization_id}")
+        
+        # First check if we already have stored data (unless force rescan)
+        if duplicate_storage_service and not force_rescan:
+            stored_data = duplicate_storage_service.get_duplicate_pairs(organization_id)
+            if stored_data:
+                logger.info(f"✅ Using existing stored data for {organization_id} (last updated: {stored_data.get('last_updated')})")
+                return True
+        
+        # Only perform expensive scan if no stored data exists or force_rescan is True
+        if force_rescan:
+            logger.info(f"🔍 Force rescan requested for {organization_id}")
+        else:
+            logger.info(f"🔍 No stored data found, performing duplicate scan for {organization_id}")
+        
         # Get organization-specific vector store
         org_vector_store = get_vector_store_for_organization(organization_id)
         
         if not org_vector_store:
-            raise HTTPException(status_code=400, detail="Vector store not initialized")
+            logger.error(f"❌ Vector store not initialized for {organization_id}")
+            return False
         
+        # Perform expensive duplicate detection
         duplicates = org_vector_store.get_duplicates()
-        return [DuplicatePair(**dup) for dup in duplicates]
+        
+        # Store results in persistent storage
+        success = duplicate_storage_service.store_duplicate_pairs(organization_id, duplicates)
+        
+        if success:
+            logger.info(f"✅ Stored {len(duplicates)} duplicate pairs for {organization_id}")
+        else:
+            logger.error(f"❌ Failed to store duplicate pairs for {organization_id}")
+        
+        return success
+        
+    except Exception as e:
+        logger.error(f"❌ Failed to refresh duplicates for {organization_id}: {str(e)}")
+        return False
+
+
+@app.get("/duplicates")
+async def get_duplicates(organization_id: Optional[str] = None) -> List[DuplicatePair]:
+    """Get all detected duplicate document pairs for organization."""
+    try:
+        if not duplicate_storage_service:
+            raise HTTPException(status_code=500, detail="Storage service not initialized")
+        
+        if not organization_id:
+            raise HTTPException(status_code=400, detail="Organization ID is required")
+        
+        # Get unresolved duplicate pairs from storage
+        unresolved_pairs = duplicate_storage_service.get_unresolved_pairs(organization_id)
+        
+        # If no stored pairs, trigger a fresh scan
+        if not unresolved_pairs:
+            logger.info(f"🔍 No stored duplicates found for {organization_id}, triggering fresh scan...")
+            await refresh_duplicates_for_organization(organization_id)
+            unresolved_pairs = duplicate_storage_service.get_unresolved_pairs(organization_id)
+        
+        return [DuplicatePair(**pair) for pair in unresolved_pairs]
         
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"❌ Failed to get duplicates: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to get duplicates: {str(e)}")
 
 
@@ -518,26 +581,68 @@ async def get_duplicates(organization_id: Optional[str] = None) -> List[Duplicat
 async def get_duplicate_summary(organization_id: Optional[str] = None):
     """Get duplicate summary without expensive calculations for organization."""
     try:
-        # Get organization-specific vector store
+        if not duplicate_storage_service:
+            raise HTTPException(status_code=500, detail="Storage service not initialized")
+        
+        if not organization_id:
+            raise HTTPException(status_code=400, detail="Organization ID is required")
+        
+        # First try to get metadata (fast)
+        metadata = duplicate_storage_service.get_organization_metadata(organization_id)
+        
+        if metadata:
+            logger.info(f"📊 Using stored metadata for {organization_id}")
+            return {
+                "total_documents": metadata.get("total_documents", 0),
+                "duplicate_pairs": metadata.get("pending_duplicate_pairs", 0),
+                "documents_with_duplicates": metadata.get("documents_with_duplicates", 0),
+                "potential_merges": metadata.get("pending_duplicate_pairs", 0),
+                "last_updated": metadata.get("last_updated"),
+                "last_ingestion": metadata.get("last_ingestion"),
+                "spaces_indexed": metadata.get("spaces_indexed", [])
+            }
+        
+        # Fallback: try duplicate pairs data
+        stored_pairs = duplicate_storage_service.get_duplicate_pairs(organization_id)
+        
+        if stored_pairs:
+            logger.info(f"📊 Using stored duplicate pairs for {organization_id}")
+            unresolved_pairs = duplicate_storage_service.get_unresolved_pairs(organization_id)
+            
+            return {
+                "total_documents": stored_pairs.get("total_documents", 0),
+                "duplicate_pairs": len(unresolved_pairs),
+                "documents_with_duplicates": len(unresolved_pairs) * 2 if unresolved_pairs else 0,
+                "potential_merges": len(unresolved_pairs),
+                "last_updated": stored_pairs.get("last_updated")
+            }
+        
+        # Last resort: query vector store (slow)
+        logger.warning(f"⚠️ No stored data found, querying vector store for {organization_id}")
         org_vector_store = get_vector_store_for_organization(organization_id)
         
         if not org_vector_store:
-            raise HTTPException(status_code=400, detail="Vector store not initialized")
+            return {
+                "total_documents": 0,
+                "duplicate_pairs": 0,
+                "documents_with_duplicates": 0,
+                "potential_merges": 0,
+                "last_updated": None
+            }
         
-        # Get basic document count
         document_count = org_vector_store.get_document_count()
-        
-        # Count documents that have similar_docs metadata (fast)
-        duplicate_count = org_vector_store.get_duplicate_count()
         
         return {
             "total_documents": document_count,
-            "duplicate_pairs": duplicate_count,
-            "documents_with_duplicates": duplicate_count * 2 if duplicate_count > 0 else 0,
-            "potential_merges": duplicate_count
+            "duplicate_pairs": 0,
+            "documents_with_duplicates": 0,
+            "potential_merges": 0,
+            "last_updated": None
         }
         
     except Exception as e:
+        logger.error(f"❌ Failed to get duplicate summary: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get duplicate summary: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to get duplicate summary: {str(e)}")
 
 
@@ -599,16 +704,28 @@ async def get_merge_documents(pair_id: int, organization_id: Optional[str] = Non
     log_api_request(f"/merge/documents/{pair_id}", "GET", organization_id=organization_id)
     
     try:
-        # Get the organization-specific vector store
-        vs_service = get_vector_store_for_organization(organization_id)
+        if not organization_id:
+            raise HTTPException(status_code=400, detail="Organization ID is required")
         
-        # Get the duplicate pair data
-        duplicate_pairs = vs_service.get_duplicate_pairs()
-        logger.debug(f"Found {len(duplicate_pairs)} duplicate pairs")
+        # Use stored duplicate pairs instead of expensive ChromaDB query
+        stored_pairs = []
+        if duplicate_storage_service:
+            unresolved_pairs = duplicate_storage_service.get_unresolved_pairs(organization_id)
+            if unresolved_pairs:
+                stored_pairs = unresolved_pairs
+                logger.info(f"📊 Using stored duplicate pairs: {len(stored_pairs)} unresolved pairs")
+        
+        # Fallback to vector store only if no stored pairs
+        if not stored_pairs:
+            logger.warning(f"⚠️ No stored pairs found, falling back to vector store query")
+            vs_service = get_vector_store_for_organization(organization_id)
+            stored_pairs = vs_service.get_duplicate_pairs()
+        
+        logger.debug(f"Found {len(stored_pairs)} duplicate pairs")
         
         # Find the specific pair
         target_pair = None
-        for pair in duplicate_pairs:
+        for pair in stored_pairs:
             if pair['id'] == pair_id:
                 target_pair = pair
                 break
@@ -619,6 +736,9 @@ async def get_merge_documents(pair_id: int, organization_id: Optional[str] = Non
             raise HTTPException(status_code=404, detail=f"Duplicate pair {pair_id} not found")
         
         logger.info(f"Found target pair: {target_pair['page1']['title']} <-> {target_pair['page2']['title']}")
+        
+        # Get vector store only for document content retrieval
+        vs_service = get_vector_store_for_organization(organization_id)
         
         # Get full document content from vector store
         main_doc_data = vs_service.get_document_by_metadata(target_pair['page1'])
@@ -666,11 +786,19 @@ async def get_merge_documents(pair_id: int, organization_id: Optional[str] = Non
 async def perform_merge(request: MergeRequest):
     """Perform AI-powered merge of two documents."""
     try:
-        # Get the organization-specific vector store
-        vs_service = get_vector_store_for_organization(request.organization_id)
+        # Use stored duplicate pairs instead of expensive ChromaDB query
+        duplicate_pairs = []
+        if duplicate_storage_service:
+            stored_data = duplicate_storage_service.get_duplicate_pairs(request.organization_id)
+            if stored_data and stored_data.get('duplicate_pairs'):
+                duplicate_pairs = stored_data['duplicate_pairs']
+                print(f"📊 [PERFORM_MERGE] Using stored duplicate pairs: {len(duplicate_pairs)} pairs")
         
-        # Get the duplicate pair data
-        duplicate_pairs = vs_service.get_duplicate_pairs()
+        # Fallback to vector store only if no stored pairs
+        if not duplicate_pairs:
+            print(f"⚠️ [PERFORM_MERGE] No stored pairs found, falling back to vector store query")
+            vs_service = get_vector_store_for_organization(request.organization_id)
+            duplicate_pairs = vs_service.get_duplicate_pairs()
         
         # Find the specific pair
         target_pair = None
@@ -681,6 +809,9 @@ async def perform_merge(request: MergeRequest):
         
         if not target_pair:
             raise HTTPException(status_code=404, detail=f"Duplicate pair {request.pair_id} not found")
+        
+        # Get vector store only for document content retrieval
+        vs_service = get_vector_store_for_organization(request.organization_id)
         
         # Get full document content
         main_doc_data = vs_service.get_document_by_metadata(target_pair['page1'])
@@ -712,6 +843,84 @@ async def perform_merge(request: MergeRequest):
         raise HTTPException(status_code=500, detail=f"Failed to perform merge: {str(e)}")
 
 
+@app.get("/merge/history")
+async def get_merge_history(organization_id: Optional[str] = None, limit: int = 50):
+    """Get merge operation history for an organization."""
+    try:
+        if not organization_id:
+            raise HTTPException(status_code=400, detail="organization_id is required")
+        
+        from services.merge_operations_storage import merge_operations_storage
+        
+        # Get merge operations for the organization
+        merge_data = merge_operations_storage.get_merge_operations(organization_id)
+        operations = merge_data.get('operations', [])
+        
+        # Sort by timestamp (newest first)
+        operations.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+        
+        # Apply limit
+        return operations[:limit]
+        
+    except Exception as e:
+        print(f"Error getting merge history: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get merge history: {str(e)}")
+
+
+@app.post("/merge/undo")
+async def undo_merge_operation_endpoint(request: dict):
+    """Undo a completed merge operation with sequential validation."""
+    try:
+        merge_id = request.get('merge_id')
+        organization_id = request.get('organization_id')
+        user_credentials = request.get('user_credentials')
+        
+        if not merge_id:
+            raise HTTPException(status_code=400, detail="merge_id is required")
+        if not organization_id:
+            raise HTTPException(status_code=400, detail="organization_id is required")
+        
+        print(f"🔍 [UNDO_MERGE] Received request for merge_id: {merge_id}")
+        print(f"🔍 [UNDO_MERGE] Organization ID: {organization_id}")
+        print(f"🔍 [UNDO_MERGE] User credentials provided: {bool(user_credentials)}")
+        
+        from services.merge_operations_storage import merge_operations_storage
+        
+        # Validate if this operation can be undone
+        validation = merge_operations_storage.validate_undo_sequence(organization_id, merge_id)
+        
+        if not validation['can_undo']:
+            print(f"❌ [UNDO_MERGE] Cannot undo: {validation['reason']}")
+            
+            if validation.get('required_undos'):
+                next_undo = validation.get('next_required_undo')
+                return {
+                    "success": False,
+                    "reason": validation['reason'],
+                    "requires_sequential_undo": True,
+                    "next_required_undo": next_undo,
+                    "blocking_operations": validation['required_undos']
+                }
+            else:
+                raise HTTPException(status_code=400, detail=validation['reason'])
+        
+        # Import the undo functionality
+        from confluence.api import undo_merge_operation
+        
+        success, message = undo_merge_operation(merge_id, user_credentials)
+        
+        if success:
+            print(f"✅ [UNDO_MERGE] Undo operation successful: {message}")
+            return {"success": True, "message": message}
+        else:
+            print(f"❌ [UNDO_MERGE] Undo operation failed: {message}")
+            raise HTTPException(status_code=500, detail=message)
+            
+    except Exception as e:
+        print(f"❌ [UNDO_MERGE] Error undoing merge: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to undo merge: {str(e)}")
+
+
 @app.post("/merge/apply")
 async def apply_merge(request: ApplyMergeRequest):
     """Apply the merged content to Confluence."""
@@ -728,8 +937,18 @@ async def apply_merge(request: ApplyMergeRequest):
         vs_service = get_vector_store_for_organization(request.organization_id)
         
         print(f"🔍 [APPLY_MERGE] Getting duplicate pairs...")
-        # Get the duplicate pair data
-        duplicate_pairs = vs_service.get_duplicate_pairs()
+        # Use stored duplicate pairs instead of expensive ChromaDB query
+        duplicate_pairs = []
+        if duplicate_storage_service:
+            stored_data = duplicate_storage_service.get_duplicate_pairs(request.organization_id)
+            if stored_data and stored_data.get('duplicate_pairs'):
+                duplicate_pairs = stored_data['duplicate_pairs']
+                print(f"📊 [APPLY_MERGE] Using stored duplicate pairs: {len(duplicate_pairs)} pairs")
+        
+        # Fallback to vector store only if no stored pairs
+        if not duplicate_pairs:
+            print(f"⚠️ [APPLY_MERGE] No stored pairs found, falling back to vector store query")
+            duplicate_pairs = vs_service.get_duplicate_pairs()
         
         print(f"🔍 [APPLY_MERGE] Found {len(duplicate_pairs)} duplicate pairs, looking for pair_id: {request.pair_id}")
         # Find the specific pair
@@ -776,7 +995,8 @@ async def apply_merge(request: ApplyMergeRequest):
             similar_doc, 
             request.merged_content, 
             keep_main=request.keep_main,
-            user_credentials=request.user_credentials
+            user_credentials=request.user_credentials,
+            organization_id=request.organization_id
         )
         
         print(f"🔍 [APPLY_MERGE] apply_merge_to_confluence returned: success={success}, message={message}")
@@ -789,11 +1009,22 @@ async def apply_merge(request: ApplyMergeRequest):
         print(f"🔍 [APPLY_MERGE] Marking duplicate pair {request.pair_id} as resolved...")
         try:
             vs_service.mark_pair_as_resolved(request.pair_id)
-            print(f"✅ [APPLY_MERGE] Successfully marked pair {request.pair_id} as resolved")
+            print(f"✅ [APPLY_MERGE] Successfully marked pair {request.pair_id} as resolved in vector store")
         except Exception as e:
-            print(f"⚠️ [APPLY_MERGE] Failed to mark pair as resolved: {e}")
+            print(f"⚠️ [APPLY_MERGE] Failed to mark pair as resolved in vector store: {e}")
             # Don't fail the entire operation since the merge was successful
         
+        # Also mark as resolved in our storage service
+        try:
+            if duplicate_storage_service:
+                success = duplicate_storage_service.mark_pair_resolved(request.organization_id, str(request.pair_id))
+                if success:
+                    print(f"✅ [APPLY_MERGE] Successfully marked pair {request.pair_id} as resolved in storage")
+                else:
+                    print(f"⚠️ [APPLY_MERGE] Failed to mark pair as resolved in storage")
+        except Exception as e:
+            print(f"⚠️ [APPLY_MERGE] Error updating storage: {e}")
+
         print(f"✅ [APPLY_MERGE] Merge completed successfully!")
         return {"success": True, "message": message}
         
@@ -807,6 +1038,103 @@ async def apply_merge(request: ApplyMergeRequest):
         raise HTTPException(status_code=500, detail=f"Failed to apply merge: {str(e)}")
 
 
+@app.post("/refresh-duplicates")
+async def refresh_duplicates(organization_id: Optional[str] = None, force: bool = False):
+    """Force refresh of duplicate detection data after merge operations"""
+    start_time = time.time()
+    log_api_request("/refresh-duplicates", "POST", organization_id=organization_id)
+    
+    try:
+        if not organization_id:
+            raise HTTPException(status_code=400, detail="Organization ID is required")
+        
+        logger.info(f"🔄 [REFRESH_DUPLICATES] Starting refresh for organization {organization_id}")
+        
+        # Use our new refresh function
+        success = await refresh_duplicates_for_organization(organization_id, force_rescan=force)
+        
+        if success:
+            # Get the refreshed data to return stats
+            stored_data = duplicate_storage_service.get_duplicate_pairs(organization_id)
+            unresolved_pairs = duplicate_storage_service.get_unresolved_pairs(organization_id)
+            
+            duration_ms = (time.time() - start_time) * 1000
+            
+            log_api_response(logger, "/refresh-duplicates", 200, duration_ms, 
+                           pairs_found=len(unresolved_pairs))
+            
+            return {
+                "success": True,
+                "message": "Duplicate detection refreshed successfully",
+                "pairs_found": len(unresolved_pairs),
+                "total_pairs": len(stored_data.get('duplicate_pairs', [])) if stored_data else 0,
+                "last_updated": stored_data.get('last_updated') if stored_data else None,
+                "duration_ms": duration_ms
+            }
+        else:
+            duration_ms = (time.time() - start_time) * 1000
+            log_api_response(logger, "/refresh-duplicates", 500, duration_ms)
+            raise HTTPException(status_code=500, detail="Failed to refresh duplicate detection")
+            
+    except HTTPException:
+        duration_ms = (time.time() - start_time) * 1000
+        log_api_response(logger, "/refresh-duplicates", 500, duration_ms)
+        raise
+    except Exception as e:
+        duration_ms = (time.time() - start_time) * 1000
+        log_api_response(logger, "/refresh-duplicates", 500, duration_ms)
+        logger.error(f"❌ [REFRESH_DUPLICATES] Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Refresh failed: {str(e)}")
+
+
+# Cleanup endpoint for testing
+@app.post("/cleanup-organization")
+async def cleanup_organization(organization_id: Optional[str] = None):
+    """Clean up all data for an organization (ChromaDB + storage) - for testing."""
+    try:
+        if not organization_id:
+            raise HTTPException(status_code=400, detail="Organization ID is required")
+        
+        logger.info(f"🧹 Starting cleanup for organization {organization_id}")
+        
+        # Clear ChromaDB data
+        try:
+            org_vector_store = get_vector_store_for_organization(organization_id)
+            if org_vector_store:
+                # Reset the vector store (this will clear the collection)
+                org_vector_store.reset()
+                logger.info(f"✅ Cleared ChromaDB data for {organization_id}")
+            
+            # Remove from cache
+            if organization_id in organization_vector_stores:
+                del organization_vector_stores[organization_id]
+                
+        except Exception as e:
+            logger.warning(f"⚠️ ChromaDB cleanup failed: {e}")
+        
+        # Clear storage data
+        if duplicate_storage_service:
+            success = duplicate_storage_service.delete_organization_data(organization_id)
+            if success:
+                logger.info(f"✅ Cleared storage data for {organization_id}")
+            else:
+                logger.warning(f"⚠️ Storage cleanup failed for {organization_id}")
+        
+        return {
+            "success": True,
+            "message": f"Organization {organization_id} data cleared successfully",
+            "organization_id": organization_id
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Cleanup failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Cleanup failed: {str(e)}")
+
+
+# Apply merge operation
+@app.post("/apply-merge")
 # Background processing function
 async def process_documents_background(processing_id: str, request: ProcessingRequest):
     """Background task for processing documents."""
@@ -965,6 +1293,31 @@ async def process_documents_background(processing_id: str, request: ProcessingRe
         
         if scan_success:
             print(f"✅ [PROCESSING {processing_id}] Duplicate scan completed successfully")
+            
+            # Store metadata after successful processing
+            try:
+                if duplicate_storage_service:
+                    metadata = {
+                        "total_documents": new_doc_count if 'new_doc_count' in locals() else len(documents),
+                        "total_pages": len(documents),
+                        "spaces_indexed": request.space_keys,
+                        "last_ingestion": datetime.now(timezone.utc).isoformat(),
+                        "total_duplicate_pairs": scan_results.get('pairs_found', 0),
+                        "pending_duplicate_pairs": scan_results.get('pairs_found', 0),
+                        "resolved_duplicate_pairs": 0,
+                        "documents_updated": scan_results.get('documents_updated', 0),
+                        "processing_id": processing_id
+                    }
+                    
+                    success = duplicate_storage_service.store_organization_metadata(organization_id, metadata)
+                    if success:
+                        print(f"✅ [PROCESSING {processing_id}] Stored organization metadata")
+                    else:
+                        print(f"⚠️ [PROCESSING {processing_id}] Failed to store organization metadata")
+                        
+            except Exception as meta_error:
+                print(f"⚠️ [PROCESSING {processing_id}] Metadata storage error: {meta_error}")
+            
             processing_status[processing_id].update({
                 "status": "completed",
                 "message": "Processing completed successfully",

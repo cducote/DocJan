@@ -15,7 +15,7 @@ export default function Sidebar({ currentPage, platform, onPageChange, onPlatfor
     { key: 'dashboard', label: 'Dashboard', icon: 'dashboard' },
     ...(platform === 'confluence' ? [{ key: 'spaces', label: 'Spaces', icon: 'spaces' }] : []),
     { key: 'search', label: 'Search', icon: 'search' },
-    { key: 'duplicates', label: 'Content Report', icon: 'duplicates' },
+    { key: 'content-report', label: 'Content Report', icon: 'duplicates' },
     { key: 'merge_history', label: 'Merge History', icon: 'merge_history' },
     { key: 'settings', label: 'Settings', icon: 'settings' }
   ];

@@ -54,7 +54,7 @@ def get_merge_collection():
     return merge_collection
 
 
-def store_merge_operation(kept_page_id, deleted_page_id, merged_content, kept_title, deleted_title, kept_url="", deleted_url=""):
+def store_merge_operation(kept_page_id, deleted_page_id, merged_content, kept_title, deleted_title, kept_url="", deleted_url="", organization_id=None, pre_merge_version=None):
     """
     Store a merge operation record for tracking and undo capability
     
@@ -66,14 +66,20 @@ def store_merge_operation(kept_page_id, deleted_page_id, merged_content, kept_ti
         deleted_title (str): Title of the deleted page
         kept_url (str): URL of the kept page
         deleted_url (str): URL of the deleted page
+        organization_id (str): Organization ID for multi-tenant support
+        pre_merge_version (int): Version number before merge for accurate undo
         
     Returns:
-        dict: Merge operation record
+        tuple: (success: bool, message: str, merge_id: str)
     """
     try:
-        import json
         import uuid
         from datetime import datetime
+        from services.merge_operations_storage import merge_operations_storage
+        
+        # Default organization if not provided
+        if not organization_id:
+            organization_id = "default"
         
         # Generate unique ID for this merge operation
         merge_id = str(uuid.uuid4())
@@ -85,69 +91,58 @@ def store_merge_operation(kept_page_id, deleted_page_id, merged_content, kept_ti
             "id": merge_id,
             "kept_page_id": kept_page_id,
             "deleted_page_id": deleted_page_id,
+            "target_page_id": kept_page_id,  # For consistency with new storage
             "kept_title": kept_title,
             "deleted_title": deleted_title,
             "timestamp": timestamp,
             "status": "completed",  # Initial status
             "merged_content": merged_content,
             "kept_url": kept_url,
-            "deleted_url": deleted_url
+            "deleted_url": deleted_url,
+            "pre_merge_version": pre_merge_version,  # Store for accurate undo
+            "organization_id": organization_id
         }
         
-        # Try to load existing merge operations
-        merge_operations = []
-        merge_file = "merge_operations.json"
+        # Save using new storage system
+        operation_id = merge_operations_storage.add_merge_operation(organization_id, merge_record)
         
-        if os.path.exists(merge_file):
-            try:
-                with open(merge_file, 'r') as f:
-                    merge_operations = json.load(f)
-            except:
-                merge_operations = []
-        
-        # Add new operation
-        merge_operations.append(merge_record)
-        
-        # Save back to file
-        with open(merge_file, 'w') as f:
-            json.dump(merge_operations, f, indent=2)
-        
-        return True, f"Merge operation stored with ID: {merge_id}"
+        return True, f"Merge operation stored with ID: {operation_id}", operation_id
     
     except Exception as e:
         print(f"Error storing merge operation: {str(e)}")
-        return False, f"Failed to store merge operation: {str(e)}"
+        return False, f"Failed to store merge operation: {str(e)}", None
 
 
-def get_recent_merges(limit=20):
+def get_recent_merges(limit=20, organization_id=None):
     """
-    Get recent merge operations
+    Get recent merge operations for an organization
     
     Args:
         limit (int): Maximum number of operations to return
+        organization_id (str): Organization ID to filter by
         
     Returns:
-        list: Recent merge operations
+        list: List of merge operation records
     """
     try:
-        import json
+        from services.merge_operations_storage import merge_operations_storage
         
-        merge_file = "merge_operations.json"
+        # Default organization if not provided
+        if not organization_id:
+            organization_id = "default"
         
-        if not os.path.exists(merge_file):
-            return []
-        
-        with open(merge_file, 'r') as f:
-            merge_operations = json.load(f)
+        # Get merge operations for the organization
+        merge_data = merge_operations_storage.get_merge_operations(organization_id)
+        operations = merge_data.get('operations', [])
         
         # Sort by timestamp (newest first)
-        merge_operations.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+        operations.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
         
-        # Return up to limit entries
-        return merge_operations[:limit]
-    
+        # Apply limit
+        return operations[:limit]
+        
     except Exception as e:
-        print(f"Error getting merge operations: {str(e)}")
+        print(f"Error getting recent merges: {str(e)}")
         return []
 
 

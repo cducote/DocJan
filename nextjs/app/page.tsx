@@ -2,7 +2,7 @@
 
 import { useAuth, useOrganization, useClerk } from '@clerk/nextjs';
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Sidebar from '../components/sidebar';
 import DashboardContent from '../components/dashboard-content';
 import SearchPage from '../components/search-page';
@@ -18,9 +18,29 @@ export default function Home() {
   const { organization, isLoaded: orgLoaded } = useOrganization();
   const { signOut } = useClerk();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [currentPage, setCurrentPage] = useState('dashboard');
   const [platform, setPlatform] = useState<'confluence' | 'sharepoint'>('confluence');
+  const [shouldRefresh, setShouldRefresh] = useState(false);
+
+  // Handle URL parameters for page navigation and refresh
+  useEffect(() => {
+    const pageParam = searchParams.get('page');
+    const refreshParam = searchParams.get('refresh');
+    
+    if (pageParam) {
+      setCurrentPage(pageParam);
+      if (refreshParam === 'true') {
+        setShouldRefresh(true);
+      }
+      // Clear URL parameters after setting state
+      const url = new URL(window.location.href);
+      url.searchParams.delete('page');
+      url.searchParams.delete('refresh');
+      window.history.replaceState({}, '', url.toString());
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     if (authLoaded && !isSignedIn) {
@@ -69,7 +89,9 @@ export default function Home() {
       case 'search':
         return <SearchPage platform={platform} />;
       case 'duplicates':
-        return <ContentReportPage platform={platform} />;
+        return <ContentReportPage platform={platform} shouldRefresh={shouldRefresh} onRefreshComplete={() => setShouldRefresh(false)} />;
+      case 'content-report':
+        return <ContentReportPage platform={platform} shouldRefresh={shouldRefresh} onRefreshComplete={() => setShouldRefresh(false)} />;
       case 'spaces':
         return platform === 'confluence' ? <SpacesPage platform={platform} /> : <DashboardContent platform={platform} onPageChange={setCurrentPage} />;
       case 'merge_history':

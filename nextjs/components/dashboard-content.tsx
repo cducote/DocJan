@@ -102,6 +102,24 @@ export default function DashboardContent({ platform, onPageChange }: DashboardCo
     }
   }, [platform, connectionStatus]);
 
+  // Refresh data when page becomes visible (e.g., returning from merge operations)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden && connectionStatus?.vector_store_connected && connectionStatus?.document_count > 0) {
+        // Only refresh if we have been away for more than 30 seconds
+        const lastRefresh = sessionStorage.getItem('lastDashboardRefresh');
+        const now = Date.now();
+        if (!lastRefresh || now - parseInt(lastRefresh) > 30000) {
+          loadDuplicateData();
+          sessionStorage.setItem('lastDashboardRefresh', now.toString());
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [connectionStatus]);
+
   const loadDuplicateData = async () => {
     if (!organization?.id) return;
     
@@ -292,7 +310,7 @@ export default function DashboardContent({ platform, onPageChange }: DashboardCo
               </div>
 
               <button
-                onClick={() => onPageChange('duplicates')}
+                onClick={() => onPageChange('content-report')}
                 className="w-full bg-primary text-primary-foreground py-2 px-4 rounded-lg hover:bg-primary/90 transition-colors"
               >
                 View Content Report

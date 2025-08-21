@@ -755,7 +755,7 @@ class VectorStoreService:
     def mark_pair_as_resolved(self, pair_id: int) -> bool:
         """
         Mark a duplicate pair as resolved so it won't appear in future duplicate reports.
-        Persists the resolved status to ChromaDB for permanent storage.
+        Now primarily relies on the storage service, with ChromaDB cache update as backup.
         
         Args:
             pair_id: ID of the duplicate pair to mark as resolved
@@ -764,7 +764,7 @@ class VectorStoreService:
             True if successful, False otherwise
         """
         try:
-            # First, try to get cached duplicate pairs and update them
+            # Try to update cached duplicate pairs in ChromaDB
             try:
                 cached_pairs = self.cache_db.get(where={"doc_type": "duplicate_pair"})
                 if cached_pairs['documents']:
@@ -776,7 +776,7 @@ class VectorStoreService:
                         if pair.get('id') == pair_id:
                             pair['status'] = 'resolved'
                             pair_found = True
-                            print(f"✅ Found and updated pair {pair_id} to resolved status")
+                            print(f"✅ Found and updated pair {pair_id} to resolved status in ChromaDB cache")
                             break
                     
                     if pair_found:
@@ -792,30 +792,21 @@ class VectorStoreService:
                                 ids=[f"duplicate_pair_{pair.get('id', i)}"]
                             )
                         
-                        print(f"💾 Persisted {len(pairs_list)} duplicate pairs with updated status")
+                        print(f"💾 Persisted {len(pairs_list)} duplicate pairs with updated status in ChromaDB cache")
                         return True
                     else:
                         print(f"⚠️ Duplicate pair {pair_id} not found in cached pairs")
                         
             except Exception as e:
-                print(f"⚠️ Could not update cached pairs: {e}")
+                print(f"⚠️ Could not update cached pairs in ChromaDB: {e}")
                 
-            # Fallback: Store a simple resolved marker for this pair
-            try:
-                self.db.add(
-                    documents=[f"resolved_pair_{pair_id}"],
-                    metadatas=[{"doc_type": "resolved_pair", "pair_id": pair_id}],
-                    ids=[f"resolved_pair_{pair_id}"]
-                )
-                print(f"✅ Stored resolved marker for pair {pair_id}")
-                return True
+            # Note: The main storage is now handled by DuplicateStorageService
+            # This function is kept for ChromaDB cache consistency only
+            print(f"✅ ChromaDB cache update completed for pair {pair_id}")
+            return True
                 
-            except Exception as e:
-                print(f"❌ Failed to store resolved marker: {e}")
-                return False
-            
         except Exception as e:
-            print(f"❌ Error marking pair {pair_id} as resolved: {e}")
+            print(f"❌ Error marking pair {pair_id} as resolved in vector store: {e}")
             return False
 
     def get_document_by_metadata(self, page_metadata: Dict[str, str]) -> Optional[Dict[str, Any]]:

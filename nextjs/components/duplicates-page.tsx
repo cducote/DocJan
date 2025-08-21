@@ -3,12 +3,14 @@
 import React, { useState, useEffect } from 'react';
 import Sidebar from '@/components/sidebar';
 import { useOrganization } from '@clerk/nextjs';
-import { FileText, ExternalLink, AlertTriangle, CheckCircle } from 'lucide-react';
+import { FileText, ExternalLink, AlertTriangle, CheckCircle, RefreshCw } from 'lucide-react';
 import { api } from '../lib/api';
 import { useRouter } from 'next/navigation';
 
 interface ContentReportPageProps {
   platform: 'confluence' | 'sharepoint';
+  shouldRefresh?: boolean;
+  onRefreshComplete?: () => void;
 }
 
 interface DuplicatePair {
@@ -34,11 +36,12 @@ interface DuplicatesData {
   documents_with_duplicates: number;
 }
 
-export default function ContentReportPage({ platform }: ContentReportPageProps) {
+export default function ContentReportPage({ platform, shouldRefresh, onRefreshComplete }: ContentReportPageProps) {
   const { organization } = useOrganization();
   const router = useRouter();
   const [duplicatesData, setDuplicatesData] = useState<DuplicatesData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const platformName = platform === 'confluence' ? 'Confluence' : 'SharePoint';
@@ -49,14 +52,38 @@ export default function ContentReportPage({ platform }: ContentReportPageProps) 
     }
   }, [organization?.id]);
 
-  const loadDuplicatesData = async () => {
+  // Check for refresh prop (when returning from merge)
+  useEffect(() => {
+    if (shouldRefresh && organization?.id) {
+      // Force refresh the data
+      loadDuplicatesData(true);
+      // Notify parent that refresh is complete
+      onRefreshComplete?.();
+    }
+  }, [shouldRefresh, organization?.id]);
+
+  const loadDuplicatesData = async (forceRefresh = false) => {
     if (!organization?.id) return;
     
-    setLoading(true);
+    if (forceRefresh) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
     setError(null);
     
     try {
-      // Fetch only the duplicate pairs
+      // If forceRefresh is true, trigger backend refresh first
+      if (forceRefresh) {
+        try {
+          await api.refreshDuplicates(organization.id);
+          console.log('Successfully refreshed duplicate data on backend');
+        } catch (refreshError) {
+          console.warn('Failed to refresh backend data, continuing with cached data:', refreshError);
+        }
+      }
+      
+      // Fetch the duplicate pairs
       const duplicatesArray = await api.getDuplicates(organization.id);
       
       // Create the data structure with just the duplicate pairs
@@ -72,7 +99,12 @@ export default function ContentReportPage({ platform }: ContentReportPageProps) 
       setError('Failed to load content report. Please ensure data ingestion is complete.');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
+  };
+
+  const handleRefresh = () => {
+    loadDuplicatesData(true);
   };
 
   const getReadableSpaceName = (spaceName: string): string => {
@@ -110,10 +142,11 @@ export default function ContentReportPage({ platform }: ContentReportPageProps) 
           <h2 className="text-xl font-semibold mb-2 text-foreground">Unable to Load Report</h2>
           <p className="text-muted-foreground mb-4">{error}</p>
           <button
-            onClick={loadDuplicatesData}
-            className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Retry
+            {refreshing ? 'Refreshing...' : 'Retry'}
           </button>
         </div>
       </div>
@@ -123,13 +156,32 @@ export default function ContentReportPage({ platform }: ContentReportPageProps) 
   return (
     <div className="p-6 max-w-7xl mx-auto">
       {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold mb-2 text-foreground">
-          Content Report - {platformName}
-        </h1>
-        <p className="text-muted-foreground">
-          Review duplicate content pairs detected across your {platformName} workspace
-        </p>
+      <div className="mb-8 flex justify-between items-start">
+        <div>
+          <h1 className="text-3xl font-bold mb-2 text-foreground">
+            Content Report - {platformName}
+          </h1>
+          <p className="text-muted-foreground">
+            Review duplicate content pairs detected across your {platformName} workspace
+          </p>
+        </div>
+        <button
+          onClick={handleRefresh}
+          disabled={refreshing}
+          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+        >
+          {refreshing ? (
+            <>
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+              Refreshing...
+            </>
+          ) : (
+            <>
+              <RefreshCw className="h-4 w-4" />
+              Refresh
+            </>
+          )}
+        </button>
       </div>
 
       {/* Content Pairs */}
