@@ -649,7 +649,7 @@ async def get_duplicate_summary(organization_id: Optional[str] = None):
 # Clear all data for organization
 @app.post("/clear-organization-data")
 async def clear_organization_data(request: ConnectionStatusRequest):
-    """Clear all documents and cache from the vector store for a specific organization."""
+    """Clear all documents, cache, and metadata for a specific organization."""
     try:
         organization_id = request.organization_id
         if not organization_id:
@@ -660,13 +660,29 @@ async def clear_organization_data(request: ConnectionStatusRequest):
         # Get the organization-specific vector store
         vs_service = get_vector_store_for_organization(organization_id)
         
+        # Clear vector store documents
         success, message = vs_service.clear_all_documents()
         
         if not success:
             raise HTTPException(status_code=500, detail=message)
         
-        print(f"✅ [CLEAR] Successfully cleared data for organization: {organization_id}")
-        return {"success": True, "message": message, "organization_id": organization_id}
+        # Reset only connection status fields in metadata (preserve duplicate history)
+        if duplicate_storage_service:
+            # Only reset document count and connection-related fields, preserve duplicate history
+            reset_updates = {
+                "total_documents": 0,
+                "total_pages": 0,
+                "last_updated": datetime.now(timezone.utc).isoformat(),
+                "status": "cleared"
+            }
+            metadata_updated = duplicate_storage_service.update_organization_metadata(organization_id, reset_updates)
+            if metadata_updated:
+                print(f"✅ [CLEAR] Reset connection status in metadata for: {organization_id}")
+            else:
+                print(f"⚠️ [CLEAR] Failed to reset connection status in metadata for: {organization_id}")
+        
+        print(f"✅ [CLEAR] Successfully cleared documents and reset connection status for organization: {organization_id}")
+        return {"success": True, "message": f"{message}. Connection status reset to show system needs setup.", "organization_id": organization_id}
         
     except HTTPException:
         raise

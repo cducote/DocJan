@@ -5,8 +5,8 @@ Handles organization-specific merge history with sequential undo validation.
 import json
 import os
 from pathlib import Path
-from typing import List, Dict, Any, Optional
-from datetime import datetime
+from typing import Dict, Any, Optional, List
+from datetime import datetime, timezone
 import logging
 import uuid
 
@@ -277,7 +277,8 @@ class MergeOperationsStorage:
         for operation in merge_data['operations']:
             if (operation.get('kept_page_id') == page_id or 
                 operation.get('deleted_page_id') == page_id or
-                operation.get('target_page_id') == page_id):
+                operation.get('target_page_id') == page_id or
+                operation.get('page_id') == page_id):  # Also check for page_id
                 page_operations.append(operation)
         
         # Sort by timestamp
@@ -301,23 +302,28 @@ class MergeOperationsStorage:
             return {
                 "can_undo": False,
                 "reason": "Operation not found",
-                "required_undos": []
+                "required_undos": [],
+                "requires_sequential_undo": False
             }
         
         if operation.get('status') != 'completed':
             return {
                 "can_undo": False,
                 "reason": f"Operation status is '{operation.get('status')}', can only undo completed operations",
-                "required_undos": []
+                "required_undos": [],
+                "requires_sequential_undo": False
             }
         
         # Get the page ID that was kept/modified
-        target_page_id = operation.get('kept_page_id') or operation.get('target_page_id')
+        target_page_id = (operation.get('kept_page_id') or 
+                         operation.get('target_page_id') or 
+                         operation.get('page_id'))  # Also check for page_id
         if not target_page_id:
             return {
                 "can_undo": False,
                 "reason": "Cannot determine target page for operation",
-                "required_undos": []
+                "required_undos": [],
+                "requires_sequential_undo": False
             }
         
         # Get all operations involving this page
@@ -339,14 +345,76 @@ class MergeOperationsStorage:
                 "can_undo": False,
                 "reason": "Later merge operations must be undone first to maintain data integrity",
                 "required_undos": blocking_operations,
+                "requires_sequential_undo": True,
                 "next_required_undo": blocking_operations[-1]  # Most recent blocking operation
             }
         
         return {
             "can_undo": True,
             "reason": "Operation can be safely undone",
-            "required_undos": []
+            "required_undos": [],
+            "requires_sequential_undo": False
         }
+    
+    def get_merge_history(self, organization_id: str) -> List[Dict[str, Any]]:
+        """
+        Get merge history for an organization (alias for get_merge_operations).
+        
+        Args:
+            organization_id: The organization ID
+            
+        Returns:
+            List of merge operations
+        """
+        merge_data = self.get_merge_operations(organization_id)
+        return merge_data.get('operations', [])
+    
+    def mark_operation_undone(self, operation_id: str, organization_id: str) -> bool:
+        """
+        Mark an operation as undone.
+        
+        Args:
+            operation_id: The operation ID to mark as undone
+            organization_id: The organization ID
+            
+        Returns:
+            bool: True if successful
+        """
+        return self.update_merge_operation(organization_id, operation_id, {'status': 'undone'})
+    
+    def store_merge_operation(self, merge_data: Dict[str, Any]) -> str:
+        """
+        Compatibility method for tests - stores a merge operation.
+        
+        Args:
+            merge_data: Should contain 'organization_id' and operation data
+            
+        Returns:
+            str: Operation ID
+        """
+        org_id = merge_data.get('organization_id')
+        if not org_id:
+            raise ValueError("organization_id is required in merge_data")
+        
+        # Remove organization_id from the data before storing
+        operation_data = {k: v for k, v in merge_data.items() if k != 'organization_id'}
+        
+        # If the test provides an 'id', we need to store it directly rather than generate one
+        if 'id' in operation_data:
+            provided_id = operation_data['id']
+            # Get existing operations for this org
+            merge_ops = self.get_merge_operations(org_id)
+            
+            # Add this operation to the list
+            merge_ops['operations'].append(operation_data)
+            merge_ops['updated_at'] = datetime.now(timezone.utc).isoformat()
+            
+            # Save back
+            self.save_merge_operations(org_id, merge_ops)
+            return provided_id
+        else:
+            # Use the normal add method
+            return self.add_merge_operation(org_id, operation_data)
 
 # Global instance
 merge_operations_storage = MergeOperationsStorage()

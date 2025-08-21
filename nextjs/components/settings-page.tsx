@@ -28,6 +28,9 @@ export default function SettingsPage({ platform }: SettingsPageProps) {
       await clearOrganizationData(organization.id);
       setMessage({ type: 'success', text: 'Organization data successfully deleted. You can now re-ingest documents.' });
       setShowConfirmDialog(false);
+      
+      // Force refresh the page to update connection status
+      window.location.reload();
     } catch (error) {
       setMessage({ type: 'error', text: 'Failed to delete organization data. Please try again.' });
     } finally {

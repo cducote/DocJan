@@ -45,10 +45,12 @@ export default function MergeHistoryPage({ platform }: MergeHistoryPageProps) {
     
     try {
       const history = await api.getMergeHistory(organization.id);
-      setMergeHistory(history);
+      // Ensure history is always an array
+      setMergeHistory(Array.isArray(history) ? history : []);
     } catch (err) {
       setError('Failed to load merge history');
       console.error('Error loading merge history:', err);
+      setMergeHistory([]); // Set to empty array on error
     } finally {
       setLoading(false);
     }
@@ -226,19 +228,19 @@ export default function MergeHistoryPage({ platform }: MergeHistoryPageProps) {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="text-center">
             <div className="text-2xl font-bold text-green-600">
-              {mergeHistory.filter(m => m.status === 'completed').length}
+              {Array.isArray(mergeHistory) ? mergeHistory.filter(m => m.status === 'completed').length : 0}
             </div>
             <div className="text-sm text-muted-foreground">Successful Merges</div>
           </div>
           <div className="text-center">
             <div className="text-2xl font-bold text-orange-600">
-              {mergeHistory.filter(m => m.status === 'undone').length}
+              {Array.isArray(mergeHistory) ? mergeHistory.filter(m => m.status === 'undone').length : 0}
             </div>
             <div className="text-sm text-muted-foreground">Undone Merges</div>
           </div>
           <div className="text-center">
             <div className="text-2xl font-bold text-foreground">
-              {mergeHistory.length}
+              {Array.isArray(mergeHistory) ? mergeHistory.length : 0}
             </div>
             <div className="text-sm text-muted-foreground">Total Operations</div>
           </div>
